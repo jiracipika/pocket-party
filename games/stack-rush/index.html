@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Stack Rush</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main id="stage" aria-label="Stack Rush game">
+    <canvas id="game" width="360" height="640" aria-hidden="true"></canvas>
+
+    <!-- HUD -->
+    <header id="hud" class="hidden">
+      <div id="score-box" class="card">
+        <span id="score" aria-live="polite">0</span>
+        <span id="combo" class="combo hidden"></span>
+      </div>
+      <div id="hud-btns">
+        <button id="btn-sound" class="icon-btn" aria-label="Toggle sound" title="Sound (M)">♪</button>
+        <button id="btn-pause" class="icon-btn" aria-label="Pause" title="Pause (P)">⏸</button>
+      </div>
+    </header>
+
+    <!-- Start screen -->
+    <section id="screen-start" class="screen">
+      <div class="card panel">
+        <h1 id="title">STACK<span class="accent">RUSH</span></h1>
+        <p class="instr">Tap or press Space to drop the moving block — overlap builds the tower, miss and it&rsquo;s over.</p>
+        <button id="btn-start" class="big-btn">START</button>
+        <p class="best-line">BEST <span id="best-start">0</span></p>
+        <a id="home-link" href="../../index.html">&larr; All games</a>
+      </div>
+    </section>
+
+    <!-- Pause overlay -->
+    <section id="screen-pause" class="screen hidden">
+      <div class="card panel">
+        <h2>PAUSED</h2>
+        <button id="btn-resume" class="big-btn">RESUME</button>
+        <button id="btn-quit" class="mid-btn">End run</button>
+      </div>
+    </section>
+
+    <!-- Game over recap -->
+    <section id="screen-over" class="screen hidden">
+      <div class="card panel">
+        <h2>TOWER DOWN</h2>
+        <p class="recap-score"><span id="final-score">0</span> layers</p>
+        <div class="recap card">
+          <div class="row"><span>Score</span><strong id="recap-score-val">0</strong></div>
+          <div class="row"><span>Perfect drops</span><strong id="recap-perfect">0</strong></div>
+          <div class="row"><span>Best streak</span><strong id="recap-streak">0</strong></div>
+          <div class="row"><span>Best score</span><strong id="recap-best">0</strong></div>
+        </div>
+        <p id="new-best" class="accent hidden">NEW BEST!</p>
+        <button id="btn-replay" class="big-btn">REPLAY</button>
+        <button id="btn-share" class="mid-btn">Share score</button>
+        <p id="share-status" class="share-status" role="status"></p>
+        <a id="home-link-over" href="../../index.html">&larr; All games</a>
+      </div>
+    </section>
+  </main>
+
+  <script src="core.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

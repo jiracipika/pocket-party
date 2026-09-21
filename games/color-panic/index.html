@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Color Panic</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main class="stage" id="stage">
+  <div class="topbar">
+    <a class="icon-btn home" href="../../index.html" aria-label="Home">&#x2302;</a>
+    <div class="brand" aria-hidden="true">COLOR PANIC</div>
+    <button class="icon-btn" id="muteBtn" aria-label="Mute sound" aria-pressed="false">&#x1f50a;</button>
+    <button class="icon-btn" id="pauseBtn" aria-label="Pause game" aria-pressed="false">&#x23F8;</button>
+  </div>
+
+  <div class="hud" aria-live="off">
+    <div class="hud-cell">
+      <span class="hud-label">SCORE</span>
+      <span class="hud-value" id="scoreVal">0</span>
+    </div>
+    <div class="hud-cell hearts" id="heartsVal" aria-label="3 hearts">&#x2665;&#x2665;&#x2665;</div>
+    <div class="hud-cell round" id="roundCell">
+      <span class="hud-label">TIME</span>
+      <span class="hud-value" id="roundVal" role="timer" aria-label="30 seconds left in round">30</span>
+    </div>
+    <div class="hud-cell">
+      <span class="hud-label">BEST</span>
+      <span class="hud-value" id="bestVal">0</span>
+    </div>
+  </div>
+
+  <div class="canvas-wrap">
+    <canvas id="game" aria-label="Color Panic play area. Match the token's color and symbol, not the word.">
+      <p>Color Panic: match the token&rsquo;s COLOR and SYMBOL &mdash; ignore the word. Tap the matching button or press keys 1&ndash;4.</p>
+    </canvas>
+    <div class="combo-pop" id="comboPop" aria-hidden="true"></div>
+  </div>
+
+  <p class="instructions" id="instructions">Match the token&rsquo;s <strong>color + symbol</strong> &mdash; never the word inside it.</p>
+
+  <div class="controls">
+    <button class="btn primary" id="startBtn">START</button>
+    <button class="btn" id="shareBtn" hidden>SHARE SCORE</button>
+    <button class="btn" id="resumeBtn" hidden>RESUME</button>
+    <p class="share-status" id="shareStatus" role="status"></p>
+  </div>
+
+  <section class="overlay" id="overlay" hidden>
+    <div class="card">
+      <h2 id="overTitle">TIME&rsquo;S UP</h2>
+      <dl class="recap">
+        <div><dt>Score</dt><dd id="finalScore">0</dd></div>
+        <div><dt>Best combo</dt><dd id="finalCombo">0</dd></div>
+        <div><dt>Best ever</dt><dd id="finalBest">0</dd></div>
+      </dl>
+      <p class="new-best" id="newBest" hidden>&#9733; New personal best!</p>
+      <div class="overlay-actions">
+        <button class="btn primary" id="replayBtn">REPLAY</button>
+        <button class="btn" id="shareBtn2">SHARE</button>
+      </div>
+      <p class="hint">Keys: 1&ndash;4 answer &middot; P pause &middot; M mute &middot; Enter restart</p>
+    </div>
+  </section>
+</main>
+<script src="core.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

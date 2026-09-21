@@ -7,5 +7,6 @@ color-symbols.svg: transparent atlas 256×64; four 64×64 cells: red triangle, g
 ink-grain.svg: 64×64 seamless dark opaque stipple tile for backgrounds. No per-frame filter needed; cache pattern.
 block-grain.svg: 64×64 warm opaque stipple tile. Use within block face bounds only, not over platforms/collision cues.
 *-hero.webp: cropped raster concept illustrations for start/launcher art, not gameplay background plates.
+PNG atlases are 2x: snack-sprites.png is 768×128 (128px cells); color-symbols.png is 512×128 (128px cells). assets/native/ contains ten individually cropped, transparent 128×128 PNGs for import into Lens Studio. These files do not themselves assemble a Lens scene.
 
 Palette: night #0a0a0f, ink #15121b, paper #fff1bf, mint #7dffb2, warm yellow #ffe66d, coral #ff7668, lilac #bd9cff. Dark UI with no translucent scenery, bloom or glass. Shapes remain readable at actual small gameplay size.

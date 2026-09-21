@@ -1,0 +1,185 @@
+/* Pocket Party: Snack Catch — core logic.
+ * ES5-compatible UMD. No DOM/window/Date/Lens. Injected RNG. Deterministic.
+ */
+(function (root, factory) {
+  if (typeof module !== 'undefined' && typeof module.exports !== 'undefined') {
+    module.exports = factory();
+  } else {
+    root.PocketGame = factory();
+  }
+})(typeof global !== 'undefined' ? global : this, function () {
+  'use strict';
+
+  var W = 360, H = 640;          // logical play area
+  var ROUND_MS = 30000;          // 30s round
+  var HEARTS = 3;
+  var CATCH_R = 26;              // catch radius (basket mouth half-width)
+  var ITEM_R = 13;               // item radius
+  var COMBO_STEP = 5;            // catches per combo tier
+  var MAX_MULT = 3;
+  var FALL_BASE = 145;            // px/sec start
+  var FALL_MAX = 260;            // px/sec cap
+  var SPAWN_MIN = 0.45, SPAWN_MAX = 0.85; // seconds between spawns
+
+  function mulberry32(seed) {
+    var a = seed >>> 0;
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      var t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
+
+  var KINDS = ['apple', 'donut', 'cookie', 'banana'];
+
+  function createGame(opts) {
+    opts = opts || {};
+    var rng = opts.rng || function () { return 0.5; };
+    var g = {
+      W: W, H: H,
+      state: 'ready',            // ready | playing | paused | over
+      score: 0, best: 0,
+      hearts: HEARTS,
+      combo: 0, multiplier: 1,
+      catches: 0, missed: 0, bombsHit: 0,
+      timeLeft: ROUND_MS,
+      basket: { x: W / 2, y: H - 56, w: 64, h: 30 },
+      items: [],
+      events: [],                // ['catch'|'miss'|'bomb'|'combo'|'spawn'|'over'|'expire', kind, x, y]
+      _spawnTimer: 0,
+      _rng: rng
+    };
+
+    function elapsedPrivate() { return ROUND_MS - g.timeLeft; }
+
+    function start() {
+      g.state = 'playing';
+      g.score = 0; g.hearts = HEARTS; g.combo = 0; g.multiplier = 1;
+      g.catches = 0; g.missed = 0; g.bombsHit = 0;
+      g.timeLeft = ROUND_MS;
+      g.items.length = 0;
+      g.events.length = 0;
+      g.basket.x = W / 2;
+      g._spawnTimer = 0.35;
+      g.events.push(['start']);
+      return g;
+    }
+
+    function spawn(dt) {
+      g._spawnTimer -= dt;
+      if (g._spawnTimer > 0) return;
+      var prog = 1 - g.timeLeft / ROUND_MS;                 // 0..1
+      var interval = SPAWN_MIN + (SPAWN_MAX - SPAWN_MIN) * (1 - prog);
+      g._spawnTimer = interval;
+      var isBomb = rng() < (0.18 + 0.1 * prog);             // bomb ratio escalates
+      var speed = FALL_BASE + (FALL_MAX - FALL_BASE) * prog * (0.8 + 0.4 * rng());
+      var x = clamp(ITEM_R + rng() * (W - 2 * ITEM_R), ITEM_R, W - ITEM_R);
+      g.items.push({
+        x: x, y: -ITEM_R,
+        vy: speed,
+        kind: isBomb ? 'bomb' : KINDS[Math.floor(rng() * KINDS.length) % KINDS.length]
+      });
+      g.events.push(['spawn', g.items[g.items.length - 1].kind, x, -ITEM_R]);
+    }
+
+    // Swept collision: item moves old->new y; check crossing of basket band.
+    function catchCheck(it, oldY) {
+      var top = g.basket.y - g.basket.h / 2;
+      if (it.x < g.basket.x - CATCH_R - ITEM_R * 0.4) return false;
+      if (it.x > g.basket.x + CATCH_R + ITEM_R * 0.4) return false;
+      // swept: did the item cross the basket top line this step?
+      return oldY <= top && it.y >= top;
+    }
+
+    function update(dtMs) {
+      if (g.state !== 'playing' || typeof dtMs !== 'number' || !isFinite(dtMs) || dtMs <= 0) return g;
+      var dt = dtMs / 1000;
+      g.timeLeft -= dtMs;
+      if (g.timeLeft <= 0) {
+        g.timeLeft = 0;
+        g.state = 'over';
+        g.events.push(['over']);
+        g.events.push(['expire']);
+        return g;
+      }
+      spawn(dt);
+      var top = g.basket.y - g.basket.h / 2;
+      for (var i = g.items.length - 1; i >= 0; i--) {
+        var it = g.items[i];
+        var oldY = it.y;
+        it.y += it.vy * dt;
+        if (catchCheck(it, oldY)) {
+          g.items.splice(i, 1);
+          if (it.kind === 'bomb') {
+            g.bombsHit++;
+            g.hearts--;
+            g.combo = 0; g.multiplier = 1;
+            g.events.push(['bomb', it.kind, it.x, it.y]);
+            if (g.hearts <= 0) {
+              g.hearts = 0;
+              g.state = 'over';
+              g.events.push(['over']);
+              return g;
+            }
+          } else {
+            g.catches++;
+            g.combo++;
+            if (g.combo > 0 && g.combo % COMBO_STEP === 0 && g.multiplier < MAX_MULT) {
+              g.multiplier++;
+              g.events.push(['combo', g.multiplier]);
+            }
+            g.score += 10 * g.multiplier;
+            g.events.push(['catch', it.kind, it.x, it.y]);
+          }
+          continue;
+        }
+        if (it.y - ITEM_R > H) {
+          g.items.splice(i, 1);
+          if (it.kind !== 'bomb') {
+            g.missed++;
+            g.combo = 0; g.multiplier = 1;
+            g.events.push(['miss', it.kind, it.x, H]);
+          }
+        }
+      }
+      return g;
+    }
+
+    function setInput(x) {                 // absolute horizontal position in logical px
+      if (typeof x !== 'number' || !isFinite(x)) return g.basket.x;
+      g.basket.x = clamp(x, g.basket.w / 2, W - g.basket.w / 2);
+      return g.basket.x;
+    }
+    function moveBasket(dx) {              // relative move (keyboard)
+      return setInput(g.basket.x + dx);
+    }
+
+    function pause() { if (g.state === 'playing') { g.state = 'paused'; g.events.push(['pause']); } return g.state; }
+    function resume() { if (g.state === 'paused') { g.state = 'playing'; g.events.push(['resume']); } return g.state; }
+    function togglePause() { return g.state === 'playing' ? pause() : resume(); }
+
+    function takeEvents() { var e = g.events; g.events = []; return e; }
+
+    g.start = start;
+    g.update = update;
+    g.setInput = setInput;
+    g.moveBasket = moveBasket;
+    g.pause = pause;
+    g.resume = resume;
+    g.togglePause = togglePause;
+    g.takeEvents = takeEvents;
+    g.elapsedPrivate = elapsedPrivate;
+    g.CONST = { ROUND_MS: ROUND_MS, HEARTS: HEARTS, MAX_MULT: MAX_MULT, COMBO_STEP: COMBO_STEP, FALL_MAX: FALL_MAX };
+    return g;
+  }
+
+  return {
+    createGame: createGame,
+    mulberry32: mulberry32,
+    clamp: clamp,
+    VERSION: '1.0.0'
+  };
+});

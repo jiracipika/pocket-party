@@ -1,0 +1,4 @@
+{
+  "stop_at": "2026-09-21T14:05:13.902318+00:00",
+  "rule": "User resumed after peak hours. Bound this repair pass; stop on 429. No auto recurring jobs."
+}

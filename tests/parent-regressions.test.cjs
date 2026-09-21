@@ -1,0 +1,10 @@
+const test=require('node:test');const assert=require('node:assert/strict');
+const Snack=require('../games/snack-catch/core.js');
+const Stack=require('../games/stack-rush/core.js');
+const Color=require('../games/color-panic/core.js');
+test('Snack: invalid delta and input cannot corrupt live state',()=>{const g=Snack.createGame();g.start();const t=g.timeLeft;for(const dt of [NaN,Infinity,-100,undefined])g.update(dt);assert.equal(g.timeLeft,t);g.setInput(NaN);assert.ok(Number.isFinite(g.basket.x));});
+test('Snack: lethal bomb stops scoring later items in same tick',()=>{const g=Snack.createGame();g.start();g.hearts=1;const y=g.basket.y-g.basket.h/2-1;g.items.push({x:g.basket.x,y,vy:200,kind:'apple'},{x:g.basket.x,y,vy:200,kind:'bomb'});g.update(16);assert.equal(g.state,'over');assert.equal(g.score,0);});
+test('Stack: newly spawned blocks require timing, not spam',()=>{const g=Stack.createGame({rng:()=>.5});g.start();g.drop();const s=g.getState(),last=s.layers.at(-1);assert.ok(Math.abs(s.moving.x-last.x)>4,'new block must spawn outside perfect alignment');});
+test('Stack: a perfect offset snaps to previous x as well as width',()=>{const g=Stack.createGame();g.start();g.drop();const s=g.getState(),last=s.layers.at(-1);s.moving.x=last.x+3;g.drop();assert.equal(s.layers.at(-1).x,last.x);assert.equal(s.layers.at(-1).w,last.w);});
+test('Stack: paused simulation time stays frozen',()=>{const g=Stack.createGame();g.start();g.pause();const t=g.getState().time;g.update(1);assert.equal(g.getState().time,t);});
+test('Color: successful play still ends at 30 seconds',()=>{const g=Color.createGame({random:()=>.5});g.start();for(let i=0;i<310&&g.getState().phase==='playing';i++){if(i%3===0)g.pressSlot(g.getState().targetIndex);g.update(.1)}assert.equal(g.getState().phase,'over');assert.ok(g.getState().hearts>0,'ended by round timer not mistakes');});

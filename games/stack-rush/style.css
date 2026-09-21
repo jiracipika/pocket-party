@@ -1,0 +1,219 @@
+/* Stack Rush — portrait-first, #0a0a0f bg, #1c1c2e cards, #ffe66d accent */
+
+:root {
+  --bg: #0a0a0f;
+  --card: #1c1c2e;
+  --accent: #ffe66d;
+  --text: #ffffff;
+  --dim: #9a9ab0;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Avenir Next", "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: manipulation;
+}
+
+body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* faint radial glow so the stage pops on desktop */
+  background-image: radial-gradient(ellipse 120% 60% at 50% -10%, #141426 0%, var(--bg) 60%);
+}
+
+#stage {
+  position: relative;
+  height: 100vh;
+  height: min(100dvh, calc(100vw * 16 / 9));
+  aspect-ratio: 9 / 16;
+  max-width: 100vw;
+  background: var(--bg);
+}
+
+#game {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+
+.hidden { display: none !important; }
+.accent { color: var(--accent); }
+
+/* ---- cards ---- */
+.card {
+  background: var(--card);
+  border: 1px solid #2c2c46;
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+/* ---- HUD ---- */
+#hud {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: calc(12px + env(safe-area-inset-top)) 12px 0;
+  pointer-events: none;
+}
+#hud button { pointer-events: auto; }
+
+#score-box {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 8px 16px;
+  min-height: 44px;
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: 1px;
+}
+#combo { font-size: 13px; font-weight: 700; color: var(--accent); }
+
+#hud-btns { display: flex; gap: 8px; }
+
+.icon-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  border: 1px solid #2c2c46;
+  background: var(--card);
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  transition: transform 80ms ease, background 120ms ease;
+}
+.icon-btn:active { transform: scale(0.9); background: #26263e; }
+.icon-btn.muted { color: var(--dim); }
+
+/* ---- screens ---- */
+.screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(10, 10, 15, 0.72);
+  backdrop-filter: blur(3px);
+}
+
+.panel {
+  width: 100%;
+  max-width: 300px;
+  padding: 28px 22px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  align-items: center;
+}
+
+#title {
+  font-size: 40px;
+  font-weight: 900;
+  letter-spacing: 3px;
+  line-height: 1;
+}
+#title .accent { display: block; font-size: 40px; }
+
+h2 { font-size: 28px; font-weight: 900; letter-spacing: 2px; }
+
+.instr { font-size: 14px; line-height: 1.5; color: var(--dim); }
+
+.big-btn {
+  width: 100%;
+  min-height: 56px;
+  border: none;
+  border-radius: 14px;
+  background: var(--accent);
+  color: #16120a;
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: 3px;
+  cursor: pointer;
+  box-shadow: 0 6px 0 #b8a33e;
+  transition: transform 80ms ease, box-shadow 80ms ease;
+}
+.big-btn:active {
+  transform: translateY(4px);
+  box-shadow: 0 2px 0 #b8a33e;
+}
+.big-btn:focus-visible, .mid-btn:focus-visible, .icon-btn:focus-visible, a:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.mid-btn {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid #3a3a5c;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  cursor: pointer;
+  transition: transform 80ms ease, background 120ms ease;
+}
+.mid-btn:active { transform: scale(0.96); background: #26263e; }
+
+.best-line { font-size: 13px; letter-spacing: 3px; color: var(--dim); }
+.best-line span { color: var(--accent); font-weight: 800; }
+
+#home-link, #home-link-over {
+  font-size: 13px;
+  color: var(--dim);
+  text-decoration: none;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+#home-link:hover, #home-link-over:hover { color: var(--text); }
+
+/* ---- game over ---- */
+.recap-score { font-size: 15px; color: var(--dim); letter-spacing: 1px; }
+.recap-score span { font-size: 44px; font-weight: 900; color: var(--accent); }
+
+.recap {
+  width: 100%;
+  padding: 6px 14px;
+  font-size: 14px;
+  border-radius: 12px;
+}
+.recap .row {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid #2c2c46;
+}
+.recap .row:last-child { border-bottom: none; }
+.recap strong { color: var(--accent); }
+
+#new-best { font-weight: 900; letter-spacing: 2px; animation: pop 500ms ease; }
+@keyframes pop { 0% { transform: scale(0.6); } 70% { transform: scale(1.15); } 100% { transform: scale(1); } }
+
+.share-status { font-size: 12px; color: var(--dim); min-height: 16px; }
+
+@media (min-width: 700px) and (min-height: 700px) {
+  #stage {
+    height: min(96vh, 860px);
+    border-radius: 24px;
+    border: 1px solid #22223a;
+    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.65);
+    overflow: hidden;
+  }
+}
