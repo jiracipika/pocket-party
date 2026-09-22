@@ -5,3 +5,13 @@ dist/
 docs/worker-*.log
 docs/repair-*.log
 artifacts/
+.vercel
+lens-projects/color-panic-lens/Cache/
+lens-projects/color-panic-lens/*.lock
+lens-projects/color-panic-lens/Workspaces/
+lens-projects/color-panic-lens/PluginsUserPreferences/
+lens-projects/color-panic-lens/.clad/
+lens-projects/color-panic-lens/.claude/
+lens-projects/color-panic-lens/.codex/
+lens-projects/color-panic-lens/.cursor/
+lens-projects/color-panic-lens/.vscode/

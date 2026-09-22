@@ -1,0 +1,78 @@
+- !<AssetImportMetadata/807880b4-4406-47cd-b73d-0b4d3381ee9d>
+  ImportedAssetIds:
+    JavaScriptAsset: !<reference> e376f73c-8268-4cd4-9a4d-f0ee380e9560
+  ImporterName: JavaScriptAssetImporter
+  PrimaryAsset: !<reference> e376f73c-8268-4cd4-9a4d-f0ee380e9560
+  PackageType: NotAPackage
+  LegacyPackagePolicy: ~
+  ExtraData:
+    {}
+  AssetDataMap:
+    JavaScriptAsset: !<own> 5a36247c-b34e-42e2-b892-7a660f2049b0
+  DependentFiles:
+    []
+  ImporterSettings: !<AssetImporterSettings>
+    {}
+  CompressionSettings: !<own> 00000000-0000-0000-0000-000000000000
+- !<ScriptAssetData/5a36247c-b34e-42e2-b892-7a660f2049b0>
+  SvgIcon: ""
+  SetupScript:
+    code: ""
+  Description: ""
+  VersionMajor: 0
+  VersionMinor: 0
+  VersionPatch: 0
+  VersionPrerelease: ""
+  UpdateOrder: 0
+  ComponentUid: 6cd7e7ac-f60c-4d68-a6f2-77d4cb95901b
+  ExportUid: 00000000-0000-0000-0000-000000000000
+  PackagePolicy: CanBeUnpacked
+  ScriptInputsHidden:
+    basket: false
+    choiceLabels: false
+    choiceTransforms: false
+    itemPool: false
+    layerPool: false
+    messageText: false
+    movingBlock: false
+    overPanel: false
+    pauseButton: false
+    pausePanel: false
+    playArea: false
+    scoreText: false
+    startPanel: false
+    targetSymbol: false
+    targetText: false
+    timeText: false
+  ScriptTypesHidden:
+    {}
+  ReadMe: !<reference> 00000000-0000-0000-0000-000000000000
+  DeclarationFile: !<reference> 00000000-0000-0000-0000-000000000000
+  Tags:
+    []
+  Attachments:
+    []
+  DefaultScriptInputs:
+    - playArea: !<reference.ScreenTransform> 00000000-0000-0000-0000-000000000000
+      pauseButton: !<reference.ScreenTransform> 00000000-0000-0000-0000-000000000000
+      scoreText: !<reference.Text> 00000000-0000-0000-0000-000000000000
+      timeText: !<reference.Text> 00000000-0000-0000-0000-000000000000
+      messageText: !<reference.Text> 00000000-0000-0000-0000-000000000000
+      startPanel: !<reference.SceneObject> 00000000-0000-0000-0000-000000000000
+      overPanel: !<reference.SceneObject> 00000000-0000-0000-0000-000000000000
+      pausePanel: !<reference.SceneObject> 00000000-0000-0000-0000-000000000000
+      basket: !<reference.SceneObject> 00000000-0000-0000-0000-000000000000
+      itemPool: !<reference.SceneObject[]>
+        []
+      movingBlock: !<reference.SceneObject> 00000000-0000-0000-0000-000000000000
+      layerPool: !<reference.SceneObject[]>
+        []
+      targetText: !<reference.Text> 00000000-0000-0000-0000-000000000000
+      targetSymbol: !<reference.Text> 00000000-0000-0000-0000-000000000000
+      choiceTransforms: !<reference.ScreenTransform[]>
+        []
+      choiceLabels: !<reference.Text[]>
+        []
+  ScriptTypes:
+    -
+      {}
