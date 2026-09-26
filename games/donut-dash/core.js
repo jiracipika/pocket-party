@@ -1,0 +1,246 @@
+/* Pocket Party: Donut Dash — core logic.
+ * ES5-compatible UMD. No DOM/window/Date/Lens. Injected RNG. Deterministic.
+ * Infinite side-scroller: the player auto-runs right; jump (tap) and double
+ * jump clear crates; snack pickups add points; three crashes end the run.
+ */
+(function (root, factory) {
+  if (typeof module !== 'undefined' && typeof module.exports !== 'undefined') {
+    module.exports = factory();
+  } else {
+    root.PocketGame = factory();
+  }
+})(typeof global !== 'undefined' ? global : this, function () {
+  'use strict';
+
+  var W = 360, H = 640;          // logical play area
+  var GROUND_Y = 560;            // top of the ground band (feet rest here)
+  var HEARTS = 3;
+
+  var PLAYER_X = 90;             // fixed screen x of the player center
+  var PLAYER_W = 40, PLAYER_H = 40;
+
+  var GRAVITY = 2600;            // px/s^2
+  var JUMP_V = 830;              // first jump impulse (apex ~132px)
+  var JUMP2_V = 730;             // double jump impulse
+  var MAX_FALL = 1400;
+
+  var SPEED_BASE = 240;          // px/s at start
+  var SPEED_GAIN = 6;            // px/s gained per second of play
+  var SPEED_MAX = 520;
+
+  var IFRAMES = 1.2;             // seconds of mercy invulnerability after a hit
+  var PICKUP_PTS = 25;
+  var SCORE_PER_PX = 1 / 12;     // distance -> score
+  var PX_PER_M = 32;             // distance readout
+
+  var FIRST_OBST_AT = 520;       // world x of the first obstacle group
+
+  var KINDS = ['apple', 'donut', 'cookie', 'banana'];
+
+  function mulberry32(seed) {
+    var a = seed >>> 0;
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      var t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
+
+  function createGame(opts) {
+    opts = opts || {};
+    var rng = opts.rng || function () { return 0.5; };
+    var g = {
+      W: W, H: H,
+      state: 'ready',            // ready | playing | paused | over
+      score: 0, best: 0,
+      hearts: HEARTS,
+      time: 0,                   // elapsed run seconds (drives difficulty + QA)
+      x: 0,                      // world distance traveled (px)
+      meters: 0,
+      speed: SPEED_BASE,
+      iframes: 0,
+      pickupsGot: 0, hits: 0, jumpsUsed: 0,
+      player: { x: PLAYER_X, y: GROUND_Y, w: PLAYER_W, h: PLAYER_H, vy: 0, onGround: true, jumps: 0 },
+      obstacles: [],             // world-space: {x (left), y (top), w, h, kind, hit}
+      pickups: [],               // world-space: {x (center), y (center), r, kind}
+      events: [],                // ['jump'|'pickup'|'hit'|'spawn-ob'|'over'|'start'|'pause'|'resume', ...]
+      _nextObstX: FIRST_OBST_AT,
+      _rng: rng
+    };
+
+    function mkObst(w, h, x, kind) {
+      return { x: x, y: GROUND_Y - h, w: w, h: h, kind: kind, hit: false };
+    }
+
+    // Edge-to-edge gap between obstacle groups. Always >= ~1.05s of run time,
+    // so a land-then-rejump is possible at every speed the game can reach.
+    function nextGap(speed, r) {
+      return speed * 1.05 + r * (120 + speed * 0.45);
+    }
+
+    function pickKind(prog) {
+      var roll = rng();
+      if (prog > 0.25 && roll < 0.16) return 'tall';
+      if (prog > 0.4 && roll < 0.28) return 'double';
+      if (prog > 0.15 && roll < 0.46) return 'wide';
+      return 'crate';
+    }
+
+    function spawnObstacle() {
+      var prog = clamp(g.time / 45, 0, 1);
+      var kind = pickKind(prog);
+      var o;
+      if (kind === 'tall') o = mkObst(38, 78, g._nextObstX, 'tall');
+      else if (kind === 'wide') o = mkObst(80, 44, g._nextObstX, 'wide');
+      else o = mkObst(42, 46, g._nextObstX, 'crate');
+      g.obstacles.push(o);
+      g.events.push(['spawn-ob', o.kind, o.x, o.y]);
+      var lastRight = o.x + o.w;
+      if (kind === 'double') {
+        var o2 = mkObst(42, 46, lastRight + 92, 'crate');
+        g.obstacles.push(o2);
+        g.events.push(['spawn-ob', 'crate', o2.x, o2.y]);
+        lastRight = o2.x + o2.w;
+      }
+      // snack arc in the gap after the group (always clears the next group:
+      // arcs end <= lastRight+180, gaps are >= 372px at min speed)
+      if (rng() < 0.6) {
+        var baseX = lastRight + 60 + rng() * 60;
+        var hy = GROUND_Y - 55 - rng() * 85;
+        var pk = KINDS[Math.floor(rng() * KINDS.length) % KINDS.length];
+        for (var i = 0; i < 3; i++) g.pickups.push({ x: baseX + i * 30, y: hy, r: 12, kind: pk });
+      }
+      g._nextObstX = lastRight + nextGap(g.speed, rng());
+    }
+
+    function jump() {
+      if (g.state !== 'playing') return g.player.jumps;
+      var p = g.player;
+      if (p.onGround) {
+        p.vy = -JUMP_V; p.jumps = 1; p.onGround = false; g.jumpsUsed++;
+        g.events.push(['jump', 1]);
+      } else if (p.jumps === 1) {
+        p.vy = -JUMP2_V; p.jumps = 2; g.jumpsUsed++;
+        g.events.push(['jump', 2]);
+      }
+      return p.jumps;
+    }
+
+    function update(dtMs) {
+      if (g.state !== 'playing' || typeof dtMs !== 'number' || !isFinite(dtMs) || dtMs <= 0) return g;
+      var dt = dtMs / 1000;
+      var p = g.player;
+
+      g.time += dt;
+      g.speed = Math.min(SPEED_MAX, g.speed + SPEED_GAIN * dt);
+      g.x += g.speed * dt;
+      g.meters = Math.floor(g.x / PX_PER_M);
+      g.iframes = Math.max(0, g.iframes - dt);
+
+      // physics
+      p.vy = Math.min(MAX_FALL, p.vy + GRAVITY * dt);
+      p.y += p.vy * dt;
+      if (p.y >= GROUND_Y) {
+        p.y = GROUND_Y; p.vy = 0; p.onGround = true; p.jumps = 0;
+      } else {
+        p.onGround = false;
+      }
+
+      // spawn ahead, cull behind
+      while (g._nextObstX < g.x + W + 90) spawnObstacle();
+      while (g.obstacles.length && g.obstacles[0].x + g.obstacles[0].w < g.x - 80) g.obstacles.shift();
+      while (g.pickups.length && g.pickups[0].x + 24 < g.x - 60) g.pickups.shift();
+
+      // collisions: player AABB (slightly forgiving) in world space
+      var pl = g.x + p.x - p.w / 2 + 3, pr = g.x + p.x + p.w / 2 - 3;
+      var pt = p.y - p.h + 3, pb = p.y - 3;
+      var i, it;
+      if (g.iframes <= 0) {
+        for (i = 0; i < g.obstacles.length; i++) {
+          it = g.obstacles[i];
+          if (it.hit) continue;
+          if (pr > it.x + 3 && pl < it.x + it.w - 3 && pb > it.y + 3 && pt < it.y + it.h) {
+            it.hit = true;
+            g.hits++;
+            g.hearts--;
+            g.iframes = IFRAMES;
+            g.events.push(['hit', it.x - g.x, it.y]);
+            if (g.hearts <= 0) {
+              g.hearts = 0;
+              g.state = 'over';
+              g.events.push(['over']);
+              return g;
+            }
+            break; // one hit per step; i-frames cover the rest
+          }
+        }
+      }
+      for (i = g.pickups.length - 1; i >= 0; i--) {
+        var pk = g.pickups[i];
+        if (pr > pk.x - 10 && pl < pk.x + 10 && pb > pk.y - 10 && pt < pk.y + 10) {
+          g.pickups.splice(i, 1);
+          g.pickupsGot++;
+          g.events.push(['pickup', pk.kind, pk.x - g.x, pk.y]);
+        }
+      }
+
+      g.score = Math.floor(g.x * SCORE_PER_PX) + g.pickupsGot * PICKUP_PTS;
+      return g;
+    }
+
+    function start() {
+      g.state = 'playing';
+      g.score = 0; g.hearts = HEARTS;
+      g.time = 0; g.x = 0; g.meters = 0;
+      g.speed = SPEED_BASE; g.iframes = 0;
+      g.pickupsGot = 0; g.hits = 0; g.jumpsUsed = 0;
+      g.player.x = PLAYER_X; g.player.y = GROUND_Y;
+      g.player.vy = 0; g.player.onGround = true; g.player.jumps = 0;
+      g.obstacles.length = 0;
+      g.pickups.length = 0;
+      g.events.length = 0;
+      g._nextObstX = FIRST_OBST_AT;
+      g.events.push(['start']);
+      return g;
+    }
+
+    function pause() { if (g.state === 'playing') { g.state = 'paused'; g.events.push(['pause']); } return g.state; }
+    function resume() { if (g.state === 'paused') { g.state = 'playing'; g.events.push(['resume']); } return g.state; }
+    function togglePause() { return g.state === 'playing' ? pause() : resume(); }
+    function endRun() { // shell-initiated quit; keeps run stats honest
+      if (g.state === 'playing' || g.state === 'paused') {
+        g.state = 'over';
+        g.events.push(['over']);
+      }
+      return g.state;
+    }
+
+    function takeEvents() { var e = g.events; g.events = []; return e; }
+
+    g.start = start;
+    g.update = update;
+    g.jump = jump;
+    g.pause = pause;
+    g.resume = resume;
+    g.togglePause = togglePause;
+    g.endRun = endRun;
+    g.takeEvents = takeEvents;
+    g.CONST = {
+      HEARTS: HEARTS, GROUND_Y: GROUND_Y, GRAVITY: GRAVITY,
+      JUMP_V: JUMP_V, JUMP2_V: JUMP2_V,
+      SPEED_BASE: SPEED_BASE, SPEED_MAX: SPEED_MAX,
+      IFRAMES: IFRAMES, PICKUP_PTS: PICKUP_PTS, FIRST_OBST_AT: FIRST_OBST_AT
+    };
+    return g;
+  }
+
+  return {
+    createGame: createGame,
+    mulberry32: mulberry32,
+    clamp: clamp,
+    VERSION: '1.0.0'
+  };
+});

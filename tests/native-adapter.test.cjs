@@ -3,7 +3,7 @@ const test=require('node:test'),assert=require('node:assert/strict'),vm=require(
 function transform(){return {anchors:{},offsets:{},containsScreenPoint:p=>p.x>=.05&&p.x<=.95&&p.y>=.15&&p.y<=.85,screenPointToLocalPoint:p=>({x:(p.x-.05)/.9*2-1,y:1-(p.y-.15)/.7*2})};}
 function text(){return {text:'',textFill:{color:null}};}
 function obj(){const t=transform(),label=text();return {enabled:true,getComponent:n=>n==='Component.ScreenTransform'?t:n==='Component.Text'?label:null,t,label};}
-for(const slug of ['snack-catch','stack-rush','color-panic']){
+for(const slug of ['snack-catch','stack-rush','color-panic','donut-dash']){
  test(slug+': native bundle embeds exact core source',()=>{const output=fs.readFileSync('games/'+slug+'/lens/GameController.js','utf8'),core=fs.readFileSync('games/'+slug+'/core.js','utf8');assert.equal(output.split('// CORE-BEGIN\n')[1].split('\n// CORE-END')[0],core);});
  test(slug+': native adapter test-double start/update/pause/resume',()=>{
   const events={},script={api:{},playArea:transform(),pauseButton:{containsScreenPoint:()=>false},scoreText:text(),timeText:text(),messageText:text(),startPanel:obj(),overPanel:obj(),pausePanel:obj(),basket:obj(),itemPool:Array.from({length:24},obj),movingBlock:obj(),layerPool:Array.from({length:24},obj),targetText:text(),targetSymbol:text(),choiceTransforms:[],choiceLabels:Array.from({length:4},text),createEvent:n=>({bind:f=>events[n]=f})};

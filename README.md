@@ -1,6 +1,6 @@
 # Pocket Party
 
-Three quick, portrait-first games designed as Snapchat Lens game concepts, with playable browser previews and Lens Studio JavaScript adapters.
+Four quick, portrait-first games designed as Snapchat Lens game concepts, with playable browser previews and Lens Studio JavaScript adapters.
 
 ## Play locally
 
@@ -18,6 +18,7 @@ Open http://127.0.0.1:4173. No account, backend, tracking or external game asset
 - Snack Catch: drag the basket (or arrows/A/D), catch snacks, dodge bombs. A 30-second score attack.
 - Stack Rush: tap or press Space to drop a block. Preserve overlap; perfect drops earn bonuses. One missed stack ends the run.
 - Color Panic: match the target's ink color and symbol, not the word. Tap a colored button or press 1–4. A 30-second reaction game.
+- Donut Dash: an infinite side-scroller. Tap or press Space to jump (twice for a double jump), clear the crates, grab snacks. Three crashes end the run.
 
 ## Snapchat status — important
 
