@@ -14,11 +14,15 @@ controller input wired, clean single `GameController` asset — runs in the
 Lens Studio 5.24 preview with **no script errors**, same two benign
 "api is deprecated" warnings as the others).
 
-Still open, in Studio: each project has white placeholder materials
-(assign tints/textures per `native/README.md`); the original three also have
-an unused duplicate `GameController N.js` asset from re-imports — delete by
-hand (right-click → Delete in the Asset Browser). Device verification
-(checklist items 4–6) has NOT been done for any game.
+Materials (2026-09-28): white placeholders replaced — donut (golden player,
+brown crates), snack (mint basket `#7dffb2`), stack (25-material hue ramp
+`hsl((k*14+40)%360, 85%, 60%)` matching the core's block hues + gold moving
+block). Duplicate controller assets deleted in all three 2026-09-26-era
+projects (donut never had one). Donut and snack tinting ran in Studio with a
+clean preview gate (no script errors); stack's materials were applied via
+project-file edits (MCP was unstable that session) and still need one clean
+in-Studio preview pass before device work. Device verification (checklist
+items 4–6) has NOT been done for any game.
 
 ## Official platform references checked
 

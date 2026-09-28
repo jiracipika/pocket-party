@@ -3309,7 +3309,7 @@
   ShadowColor: {x: 1.000000, y: 1.000000, z: 1.000000, w: 1.000000}
   ShadowDensity: 1.000000
   Materials:
-    []
+    - !<reference> 5df8f4b2-1a21-4120-acac-62e0308af682
   FlipX: false
   FlipY: false
   RotationAngle: 0
