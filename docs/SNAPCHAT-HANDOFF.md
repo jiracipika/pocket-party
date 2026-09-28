@@ -4,6 +4,22 @@
 
 Playable browser versions and native Lens Studio JavaScript adapters with explicit scene inputs. Not exported `.lsproj` projects, not Snapchat-published Lenses. Browser testing does not validate Lens runtime behavior.
 
+## Native project status (2026-09-28)
+
+All four shipped games now have native Lens Studio projects under
+`lens-projects/`: `color-panic-lens`, `snack-catch-lens`, `stack-rush-lens`,
+and `donut-dash-lens` (assembled 2026-09-28: GameCamera/GameCanvas/PlayArea at
+±0.90/±0.70, HUD texts, panels, Player + 24-obstacle Image pool, every
+controller input wired, clean single `GameController` asset — runs in the
+Lens Studio 5.24 preview with **no script errors**, same two benign
+"api is deprecated" warnings as the others).
+
+Still open, in Studio: each project has white placeholder materials
+(assign tints/textures per `native/README.md`); the original three also have
+an unused duplicate `GameController N.js` asset from re-imports — delete by
+hand (right-click → Delete in the Asset Browser). Device verification
+(checklist items 4–6) has NOT been done for any game.
+
 ## Official platform references checked
 
 - Games overview: https://developers.snap.com/lens-studio/features/games/games-overview
