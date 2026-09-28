@@ -119,7 +119,10 @@
     } catch (e) { /* audio unavailable */ }
   }
   var sfx = {
-    good: function (combo) { beep(440 + Math.min(combo, 8) * 60, 0.12, 'triangle', 0.09); },
+    good: function (combo) {
+      var tier = combo >= 8 ? 120 : combo >= 5 ? 60 : 0; // pitch steps per tier
+      beep(440 + Math.min(combo, 8) * 60 + tier, 0.12, 'triangle', 0.09);
+    },
     bad: function () { beep(150, 0.22, 'sawtooth', 0.07); },
     expire: function () { beep(110, 0.3, 'square', 0.06); },
     over: function () { beep(220, 0.4, 'sine', 0.08); },
@@ -144,6 +147,41 @@
         size: 3 + Math.random() * 5, hex: hex
       });
     }
+  }
+
+  /* ---------- juice: ring shockwaves, red flash, token transition ---------- */
+  var rings = []; // expanding hit rings { x, y, age, life, start, grow, width, hex, bright }
+  function ringBurst(hex, x, y, combo) {
+    if (reduceMotion) return;
+    var count = combo >= 8 ? 3 : combo >= 5 ? 2 : 1; // layers stack with combo
+    var grow = combo >= 8 ? 68 : combo >= 5 ? 54 : combo >= 3 ? 44 : 32;
+    var bright = combo >= 8 ? 1 : combo >= 5 ? 0.8 : combo >= 3 ? 0.65 : 0.5;
+    for (var i = 0; i < count; i++) {
+      rings.push({
+        x: x, y: y,
+        age: -i * 0.07, // stagger the layered rings
+        life: 0.3 + i * 0.06,
+        start: 16, grow: grow,
+        width: 2.5 + i * 1.5 + (combo >= 8 ? 1.5 : 0),
+        hex: hex, bright: bright
+      });
+    }
+  }
+  var BAD_FLASH_T = 0.28; // red edge vignette fade time after a wrong tap
+  var badFlash = 0;
+  var TOKEN_IN_T = 0.18;    // fresh-target scale-in duration
+  var TOKEN_TRICKY_T = 0.5; // confusable targets double-pulse, longer
+  var tokenAnim = 0;
+  var tokenTricky = false;
+  var lastTargetIndex = -1;
+  /** Token scale for the spawn transition; confusable ones pulse twice. */
+  function tokenScale() {
+    if (tokenAnim <= 0) return 1;
+    var p = 1 - tokenAnim / (tokenTricky ? TOKEN_TRICKY_T : TOKEN_IN_T); // 0..1
+    var e = 1 - Math.pow(1 - Math.min(1, p * (tokenTricky ? 2 : 1)), 3);
+    var s = 0.85 + 0.15 * e; // scale in 0.85 -> 1
+    if (tokenTricky && p > 0.5) s += 0.06 * Math.sin((p - 0.5) * 2 * Math.PI);
+    return s;
   }
 
   /* ---------- canvas sizing (DPR capped at 1.5) ---------- */
@@ -209,6 +247,7 @@
     var word = COLORS[s.targetWord];
     var r = Math.min(cssW, cssH) * 0.155;
     var pulse = s.phase === 'playing' ? 1 + Math.sin((last || 0) / 180) * 0.02 : 1;
+    var ts = tokenScale(); // fresh-target scale-in / confusable double-pulse
 
     // ring = per-target time left
     ctx.lineWidth = 7;
@@ -224,7 +263,7 @@
     // token body: dark disk so the INK is the cue (Stroop), never white-on-color
     ctx.save();
     ctx.translate(cx, cy);
-    ctx.scale(pulse, pulse);
+    ctx.scale(pulse * ts, pulse * ts);
     ctx.fillStyle = '#15121b';
     ctx.beginPath();
     ctx.arc(0, 0, r, 0, Math.PI * 2);
@@ -294,6 +333,21 @@
       drawToken(s, cssW / 2, cssH * 0.27);
     }
 
+    // ring shockwaves from hits
+    for (var g = 0; g < rings.length; g++) {
+      var rg = rings[g];
+      if (rg.age < 0) continue; // staggered layer not started yet
+      var rt = rg.age / rg.life;
+      var re = 1 - Math.pow(1 - rt, 3); // ease-out expansion
+      ctx.globalAlpha = (1 - rt) * rg.bright;
+      ctx.lineWidth = rg.width;
+      ctx.strokeStyle = rg.hex;
+      ctx.beginPath();
+      ctx.arc(rg.x, rg.y, rg.start + rg.grow * re, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+
     // particles
     for (var p = particles.length - 1; p >= 0; p--) {
       var pt = particles[p];
@@ -302,6 +356,21 @@
       ctx.fillRect(pt.x - pt.size / 2, pt.y - pt.size / 2, pt.size, pt.size);
     }
     ctx.globalAlpha = 1;
+
+    // red edge vignette fading after a wrong tap
+    if (badFlash > 0) {
+      var fa = badFlash / BAD_FLASH_T; // 1 -> 0
+      ctx.strokeStyle = '#ff5d7d';
+      ctx.globalAlpha = 0.85 * fa;
+      ctx.lineWidth = 3;
+      roundRect(3, 3, cssW - 6, cssH - 6, 15);
+      ctx.stroke();
+      ctx.globalAlpha = 0.3 * fa; // soft inner pass
+      ctx.lineWidth = 16;
+      roundRect(9, 9, cssW - 18, cssH - 18, 12);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
   }
 
   /* ---------- input ---------- */
@@ -320,16 +389,20 @@
     if (r.hit) {
       sfx.good(st.combo);
       var rect = layout()[slot];
-      burst(COLORS[slot].hex, rect.x + rect.w / 2, rect.y + rect.h / 2, 14);
+      var bx = rect.x + rect.w / 2, by = rect.y + rect.h / 2;
+      burst(COLORS[slot].hex, bx, by, 14);
+      ringBurst(COLORS[slot].hex, bx, by, st.combo);
       if (st.combo >= 3) {
-        comboEl.textContent = 'COMBO x' + st.combo + '  +' + r.points;
-        comboEl.classList.remove('show');
+        comboEl.textContent = (st.combo >= 8 ? 'ON FIRE' : st.combo >= 5 ? 'HOT' : 'NICE')
+          + ' x' + st.combo + '  +' + r.points;
+        comboEl.className = 'combo-pop ' + (st.combo >= 8 ? 'tier-8' : st.combo >= 5 ? 'tier-5' : 'tier-3');
         void comboEl.offsetWidth; // restart animation
         comboEl.classList.add('show');
       }
     } else if (st.lastOutcome && st.lastOutcome.reason === 'wrong') {
       sfx.bad();
       shake();
+      if (!reduceMotion) badFlash = BAD_FLASH_T; // red edge vignette
     } else {
       sfx.expire();
     }
@@ -405,6 +478,21 @@
     }
     heartsEl.innerHTML = hearts;
     heartsEl.setAttribute('aria-label', s.hearts + ' hearts left');
+    if (prevHearts >= 0 && s.hearts < prevHearts) pulseHearts();
+    prevHearts = s.hearts;
+  }
+
+  var prevHearts = -1; // spots heart losses from wrong taps AND expiries
+  var heartsPulseTimer = 0;
+  function pulseHearts() {
+    if (reduceMotion) return;
+    heartsEl.classList.remove('hurt');
+    void heartsEl.offsetWidth; // restart animation
+    heartsEl.classList.add('hurt');
+    if (heartsPulseTimer) clearTimeout(heartsPulseTimer);
+    heartsPulseTimer = setTimeout(function () {
+      heartsEl.classList.remove('hurt');
+    }, 500);
   }
 
   function showOverlay(show, s) {
@@ -439,6 +527,10 @@
   function startGame() {
     ended = false;
     particles.length = 0;
+    rings.length = 0;
+    badFlash = 0;
+    tokenAnim = 0;
+    lastTargetIndex = -1; // so the first token plays its scale-in
     flash = [0, 0, 0, 0];
     lastKeyAt = {};
     overlay.hidden = true;
@@ -515,14 +607,26 @@
     last = now;
     game.update(dt);
     for (var i = 0; i < 4; i++) if (flash[i] > 0) flash[i] -= dt;
+    if (badFlash > 0) badFlash -= dt;
+    if (tokenAnim > 0) tokenAnim -= dt;
     for (var p = particles.length - 1; p >= 0; p--) {
       var pt = particles[p];
       pt.age += dt;
       pt.x += pt.vx * dt; pt.y += pt.vy * dt; pt.vy += 300 * dt;
       if (pt.age >= pt.life) particles.splice(p, 1);
     }
-    render();
+    for (var g = rings.length - 1; g >= 0; g--) {
+      rings[g].age += dt;
+      if (rings[g].age >= rings[g].life) rings.splice(g, 1);
+    }
     var st = game.getState();
+    // fresh target -> token scale-in; confusable ones get the tricky tell
+    if (st.targetIndex !== lastTargetIndex) {
+      lastTargetIndex = st.targetIndex;
+      tokenTricky = !!st.targetConfusable;
+      if (!reduceMotion) tokenAnim = tokenTricky ? TOKEN_TRICKY_T : TOKEN_IN_T;
+    }
+    render();
     if (st.phase === 'playing') syncHud(st); // live timers/score
     // Core can end the round itself (round timer / heart expiry on
     // expiry-driven frames) — the frame loop owns the recap transition.

@@ -152,6 +152,67 @@
     }
   }
 
+  // ---------- juice (S1: reads core events only; zero rule/collision changes) ----------
+  // All lifetimes <= 0.8s so the fixed-timestep loop never backlogs; every
+  // trigger below gates off under reduceMotion exactly like burst() above.
+  var fx = {
+    shake: { t: 1, dur: 0.18, mag: 7 },    // bomb: damped canvas-space translate
+    squash: { t: 1, dur: 0.18, power: 0 }, // catch=1, bomb=1.6: basket scale
+    wobble: { t: 1, dur: 0.26 }            // miss: subtle basket wobble
+  };
+  var popups = [];       // combo '\u00d72'/'\u00d73' flashes near the catch point
+  var telegraphs = [];   // fading markers at upcoming spawn x (<=200ms)
+  var lastCatch = { x: CANVAS_W / 2, y: CANVAS_H - 80 };
+
+  function kickShake() { if (reduceMotion) return; fx.shake.t = 0; }
+  function squashBasket(power) {
+    if (reduceMotion) return;
+    fx.squash.t = 0; fx.squash.power = power || 1;
+  }
+  function wobbleBasket() { if (reduceMotion) return; fx.wobble.t = 0; }
+  function comboPopup(x, y, mult) {
+    if (reduceMotion) return;
+    popups.push({
+      x: PG.clamp(x, 46, CANVAS_W - 46),
+      y: Math.min(y, CANVAS_H - 90) - 26,
+      text: '\u00d7' + mult, t: 0, dur: 0.6
+    });
+  }
+  function telegraph(kind, x) {
+    if (reduceMotion) return;
+    telegraphs.push({ x: PG.clamp(x, 10, CANVAS_W - 10), t: 0, dur: 0.2, danger: kind === 'bomb' });
+  }
+  function pulseHearts() {
+    if (reduceMotion) return;
+    el.hearts.classList.remove('fx-pulse');
+    void el.hearts.offsetWidth; // restart the CSS animation on rapid hits
+    el.hearts.classList.add('fx-pulse');
+  }
+  el.hearts.addEventListener('animationend', function () {
+    el.hearts.classList.remove('fx-pulse');
+  });
+  function stepFx(dt) {
+    if (fx.shake.t < fx.shake.dur) fx.shake.t += dt;
+    if (fx.squash.t < fx.squash.dur) fx.squash.t += dt;
+    if (fx.wobble.t < fx.wobble.dur) fx.wobble.t += dt;
+    for (var i = popups.length - 1; i >= 0; i--) {
+      popups[i].t += dt;
+      if (popups[i].t >= popups[i].dur) popups.splice(i, 1);
+    }
+    for (var j = telegraphs.length - 1; j >= 0; j--) {
+      telegraphs[j].t += dt;
+      if (telegraphs[j].t >= telegraphs[j].dur) telegraphs.splice(j, 1);
+    }
+  }
+  function fxAlive() {
+    return fx.shake.t < fx.shake.dur || fx.squash.t < fx.squash.dur ||
+      fx.wobble.t < fx.wobble.dur || popups.length > 0 || telegraphs.length > 0;
+  }
+  function resetFx() {
+    fx.shake.t = 1; fx.squash.t = 1; fx.wobble.t = 1;
+    popups.length = 0; telegraphs.length = 0;
+  }
+
   // ---------- drawing ----------
   function roundRect(c, x, y, w, h, r) {
     c.beginPath();
@@ -228,9 +289,31 @@
 
   var BASKET_DRAW_W = 64; // screen-px target width (~60px at 360 viewport)
 
+  // Visual-only squash/stretch factors around the catch line. Core hitbox
+  // (CATCH_R / basket.w) is never touched — this scales the DRAWN basket only.
+  function basketScale() {
+    var sx = 1, sy = 1;
+    if (fx.squash.t < fx.squash.dur) {
+      var p = fx.squash.t / fx.squash.dur;
+      var a = fx.squash.power * (1 - p) * (1 - p); // fast spring back, soft settle
+      sx += 0.16 * a; sy -= 0.12 * a;
+    }
+    if (fx.wobble.t < fx.wobble.dur) {
+      var q = fx.wobble.t / fx.wobble.dur;
+      var wob = 0.07 * (1 - q) * Math.sin(q * Math.PI * 3); // damped side-to-side
+      sx += wob; sy -= wob * 0.7;
+    }
+    return { sx: sx, sy: sy };
+  }
+
   function drawBasket(x) {
     var b = game.basket;
     var w = b.w + 8, h = b.h, top = b.y - h / 2;
+    var sc = basketScale();
+    ctx.save();
+    ctx.translate(x, top);   // pivot on the catch line so the mouth stays put
+    ctx.scale(sc.sx, sc.sy);
+    ctx.translate(-x, -top);
     // Astra basket sprite (atlas cell 5), cropped to face+handle. Drawn with
     // aspect compensation (square in screen px) and anchored so the sprite's
     // mouth sits exactly on the core catch line (b.y - b.h/2).
@@ -244,6 +327,7 @@
       var yTop = top - dhL * (90 / r[3]);
       ctx.drawImage(sprites.img, BASKET_CELL * CELL + r[0], r[1], r[2], r[3],
         x - dwL / 2, yTop, dwL, dhL);
+      ctx.restore();
       return;
     }
     // mint basket with weave stripes
@@ -255,6 +339,39 @@
     }
     ctx.fillStyle = '#06281a';
     roundRect(ctx, x - w / 2 + 4, top + h - 8, w - 8, 5, 3); ctx.fill();
+    ctx.restore();
+  }
+
+  function drawTelegraphs() {
+    for (var i = 0; i < telegraphs.length; i++) {
+      var tg = telegraphs[i];
+      var pr = tg.t / tg.dur;
+      var drop = 5 * pr; // slight downward drift sells the incoming fall
+      ctx.globalAlpha = 0.85 * (1 - pr);
+      ctx.fillStyle = tg.danger ? DANGER : ACCENT;
+      ctx.beginPath();
+      ctx.moveTo(tg.x - 5, 3 + drop);
+      ctx.lineTo(tg.x + 5, 3 + drop);
+      ctx.lineTo(tg.x, 13 + drop);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawPopups() {
+    ctx.textAlign = 'center';
+    for (var i = 0; i < popups.length; i++) {
+      var pp = popups[i];
+      var pr = pp.t / pp.dur;
+      ctx.globalAlpha = pr < 0.7 ? 1 : 1 - (pr - 0.7) / 0.3;
+      ctx.fillStyle = ACCENT;
+      // pop scale via font size: 1.35 -> 1 with a decaying ease
+      ctx.font = '800 ' + Math.round(22 * (1 + 0.35 * (1 - pr) * (1 - pr))) +
+        'px "Avenir Next", system-ui, sans-serif';
+      ctx.fillText(pp.text, pp.x, pp.y - 22 * pr);
+    }
+    ctx.globalAlpha = 1;
   }
 
   function draw() {
@@ -270,6 +387,20 @@
     ctx.fillStyle = 'rgba(255,255,255,0.03)';
     for (var gx = 60; gx < CANVAS_W; gx += 60) ctx.fillRect(gx, 0, 1, CANVAS_H);
 
+    // S1: damped screen shake on bomb — canvas-space translate inside the
+    // existing logical-coordinate transform (works at any resize); the
+    // backdrop stays unshaken so no blank edges can appear.
+    var shx = 0, shy = 0;
+    if (fx.shake.t < fx.shake.dur) {
+      var sp = fx.shake.t / fx.shake.dur;
+      var m = fx.shake.mag * (1 - sp) * (1 - sp); // quadratic damping
+      shx = m * Math.sin(fx.shake.t * 74 + 1.7);
+      shy = m * 0.6 * Math.sin(fx.shake.t * 91 + 4.2);
+    }
+    ctx.save();
+    ctx.translate(shx, shy);
+
+    drawTelegraphs();
     for (var i = 0; i < game.items.length; i++) drawItem(game.items[i]);
     drawBasket(game.basket.x);
 
@@ -280,6 +411,9 @@
       ctx.beginPath(); ctx.arc(pt.x, pt.y, pt.r, 0, Math.PI * 2); ctx.fill();
     }
     ctx.globalAlpha = 1;
+    drawPopups();
+
+    ctx.restore();
 
     if (game.state === 'playing' && game.multiplier > 1) {
       ctx.fillStyle = ACCENT;
@@ -305,17 +439,30 @@
   function show(ov, on) { ov.classList.toggle('hidden', !on); }
   function announce(msg) { el.srStatus.textContent = msg; }
 
-  // ---------- audio events from core ----------
+  // ---------- audio + juice events from core ----------
   function playEvents(evs) {
+    var pendingCombo = 0; // core emits ['combo', mult] BEFORE its catch event
     for (var i = 0; i < evs.length; i++) {
       var e = evs[i];
-      if (e[0] === 'catch') { sfx.catch(e[1]); burst(e[2], e[3], SNACK_COLORS[e[1]] ? SNACK_COLORS[e[1]][0] : ACCENT, 10); }
-      else if (e[0] === 'combo') sfx.combo();
-      else if (e[0] === 'bomb') { sfx.bomb(); burst(e[2], e[3], DANGER, 18, 130); }
-      else if (e[0] === 'miss') sfx.miss();
+      if (e[0] === 'catch') {
+        sfx.catch(e[1]);
+        burst(e[2], e[3], SNACK_COLORS[e[1]] ? SNACK_COLORS[e[1]][0] : ACCENT, 10);
+        lastCatch.x = e[2]; lastCatch.y = e[3];
+        squashBasket(1);
+        if (pendingCombo) { comboPopup(e[2], e[3], pendingCombo); pendingCombo = 0; }
+      }
+      else if (e[0] === 'combo') { sfx.combo(); pendingCombo = e[1]; }
+      else if (e[0] === 'bomb') {
+        sfx.bomb();
+        burst(e[2], e[3], DANGER, 18, 130);
+        kickShake(); squashBasket(1.6); pulseHearts();
+      }
+      else if (e[0] === 'miss') { sfx.miss(); wobbleBasket(); }
+      else if (e[0] === 'spawn') telegraph(e[1], e[2]);
       else if (e[0] === 'over') sfx.over();
       else if (e[0] === 'start') sfx.start();
     }
+    if (pendingCombo) comboPopup(lastCatch.x, lastCatch.y, pendingCombo); // safety net
   }
 
   function endRound() {
@@ -339,6 +486,7 @@
     keys = {};
     pointerDown = false;
     particles.length = 0;
+    resetFx();
     show(el.ovStart, false);
     show(el.ovOver, false);
     show(el.ovPause, false);
@@ -385,10 +533,11 @@
       if (game.state === 'over') endRound();
     }
     stepParticles(dt / 1000);
+    stepFx(dt / 1000);
     draw();
     syncHud();
 
-    if (game.state === 'playing' || particles.length > 0) {
+    if (game.state === 'playing' || particles.length > 0 || fxAlive()) {
       raf = window.requestAnimationFrame(loop);
     } else {
       running = false;
@@ -516,6 +665,17 @@
           catches: game.catches, missed: game.missed, bombsHit: game.bombsHit,
           timeLeft: game.timeLeft, items: game.items.length,
           basketX: game.basket.x
+        };
+      },
+      // S1: juice introspection for ?qa=1 — additive only, existing fields above unchanged
+      getFx: function () {
+        return {
+          shakeActive: fx.shake.t < fx.shake.dur,
+          squashActive: fx.squash.t < fx.squash.dur,
+          wobbleActive: fx.wobble.t < fx.wobble.dur,
+          popups: popups.length,
+          telegraphs: telegraphs.length,
+          reduceMotion: !!reduceMotion
         };
       },
       start: startRound,

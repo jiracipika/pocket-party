@@ -109,6 +109,7 @@
     jump2: function () { blip(660, 0.1, 'triangle', 0.11); blip(880, 0.08, 'triangle', 0.08, 0.05); },
     pickup: function () { blip(880, 0.07, 'sine', 0.1); blip(1320, 0.09, 'sine', 0.09, 0.06); },
     hit: function () { blip(130, 0.22, 'sawtooth', 0.15); blip(85, 0.28, 'sawtooth', 0.11, 0.04); },
+    heart: function () { blip(76, 0.1, 'sine', 0.13); blip(60, 0.16, 'sine', 0.1, 0.17); },
     over: function () { blip(392, 0.12, 'triangle', 0.1); blip(294, 0.14, 'triangle', 0.1, 0.1); blip(196, 0.22, 'triangle', 0.1, 0.2); },
     start: function () { blip(440, 0.08, 'triangle', 0.09); blip(660, 0.1, 'triangle', 0.09, 0.06); }
   };
@@ -123,6 +124,12 @@
   var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var shakeT = 0;            // cosmetic hit shake, seconds left
   var dustAcc = 0;
+  var flashT = 0;            // red edge flash after a hit, seconds left
+  var flipT = 0;             // double-jump flip spin, seconds left
+  var landSquash = 0;        // 0..1 landing squash, decays each frame
+  var heartT = 0;            // low-heart pulse timer (ms)
+  var FLIP_T = 0.35;         // double-jump flip duration (s)
+  var HIT_FLASH_T = 0.25;    // red edge flash duration (s)
 
   // ---------- particles ----------
   function burst(x, y, color, n, spread) {
@@ -141,6 +148,41 @@
       p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 260 * dt;
     }
     if (shakeT > 0) shakeT = Math.max(0, shakeT - dt);
+    if (flashT > 0) flashT = Math.max(0, flashT - dt);
+    if (flipT > 0) flipT = Math.max(0, flipT - dt);
+    if (landSquash > 0) landSquash = Math.max(0, landSquash - dt * 4.5);
+  }
+
+  // Landing feedback: squash scaled by fall speed, dust puff at the feet
+  // (dust is skipped under reduced motion; the squash stays but gentler).
+  function onLand(vy) {
+    var k = (vy - 200) / 1000;
+    landSquash = k < 0.3 ? 0.3 : (k > 1 ? 1 : k);
+    if (reduceMotion) return;
+    var n = 4 + Math.round(landSquash * 4);
+    for (var i = 0; i < n; i++) {
+      particles.push({
+        x: game.player.x + (Math.random() - 0.5) * 30, y: GROUND_Y - 2,
+        vx: (Math.random() - 0.5) * 150, vy: -15 - Math.random() * 60,
+        life: 0.3 + Math.random() * 0.25, t: 0,
+        color: 'rgba(255,255,255,0.3)', r: 2 + Math.random() * 2.5
+      });
+    }
+  }
+
+  // Squash & stretch for the donut (cosmetic): stretch while rising, squash on
+  // landing. Reduced motion keeps only a minimal landing squash.
+  function playerDeform() {
+    var sx = 1, sy = 1;
+    if (landSquash > 0) {
+      var k = reduceMotion ? 0.35 : 1;
+      sy = 1 - 0.22 * landSquash * k;
+      sx = 1 + 0.28 * landSquash * k;
+    } else if (!reduceMotion && !game.player.onGround && game.player.vy < 0) {
+      var st = Math.min(1, -game.player.vy / game.CONST.JUMP_V) * 0.14;
+      sy = 1 + st; sx = 1 - st * 0.7;
+    }
+    return [sx, sy];
   }
 
   // ---------- drawing ----------
@@ -201,16 +243,26 @@
 
   function drawPlayer() {
     var p = game.player;
-    // blink during i-frames (cosmetic only)
-    if (game.iframes > 0 && Math.floor(game.iframes * 10) % 2 === 0) return;
+    // gentle i-frame blink: dim to 35% instead of vanishing (cosmetic only)
+    var blinkA = 1;
+    if (game.iframes > 0 && Math.floor(game.iframes * 8) % 2 === 1) blinkA = 0.35;
     var size = 44;
     var cx = p.x, cy = p.y - p.h / 2;
     var roll = game.x / 22; // rolling donut
+    // extra full spin on the double jump, easing out (net 2*PI: no pop)
+    if (flipT > 0) roll += Math.PI * 2 * (1 - (flipT / FLIP_T) * (flipT / FLIP_T));
+    var df = playerDeform(), sx = df[0], sy = df[1];
     if (sprites.ready && sprites.img) {
       var c = CROP_SNACK;
       var hL = size * (sprites.sx / sprites.sy); // square in screen px
       ctx.save();
+      ctx.globalAlpha = blinkA;
       ctx.translate(cx, cy);
+      if (sx !== 1 || sy !== 1) { // squash/stretch anchored at the feet
+        ctx.translate(0, hL / 2);
+        ctx.scale(sx, sy);
+        ctx.translate(0, -hL / 2);
+      }
       ctx.rotate(roll);
       ctx.drawImage(sprites.img, PLAYER_CELL * CELL + c[0], c[1], c[2], c[3],
         -size / 2, -hL / 2, size, hL);
@@ -219,7 +271,13 @@
     }
     // primitive fallback: ink donut with sprinkle dashes
     ctx.save();
+    ctx.globalAlpha = blinkA;
     ctx.translate(cx, cy);
+    if (sx !== 1 || sy !== 1) {
+      ctx.translate(0, size / 2);
+      ctx.scale(sx, sy);
+      ctx.translate(0, -size / 2);
+    }
     ctx.rotate(roll);
     ctx.fillStyle = '#ffb0d8';
     ctx.beginPath(); ctx.arc(0, 0, size / 2, 0, Math.PI * 2); ctx.fill();
@@ -306,6 +364,18 @@
     }
     ctx.globalAlpha = 1;
     ctx.restore();
+    // red edge flash on crash (drawn unshaken so the edges stay covered)
+    if (flashT > 0) {
+      var fa = flashT / HIT_FLASH_T;
+      ctx.save();
+      ctx.lineWidth = 34;
+      ctx.strokeStyle = 'rgba(255,90,90,' + (0.5 * fa).toFixed(3) + ')';
+      ctx.strokeRect(-9, -9, CANVAS_W + 18, CANVAS_H + 18);
+      ctx.lineWidth = 70;
+      ctx.strokeStyle = 'rgba(255,90,90,' + (0.22 * fa).toFixed(3) + ')';
+      ctx.strokeRect(-22, -22, CANVAS_W + 44, CANVAS_H + 44);
+      ctx.restore();
+    }
   }
 
   // ---------- HUD ----------
@@ -327,9 +397,20 @@
   function playEvents(evs) {
     for (var i = 0; i < evs.length; i++) {
       var e = evs[i];
-      if (e[0] === 'jump') { if (e[1] === 2) sfx.jump2(); else sfx.jump(); }
-      else if (e[0] === 'pickup') { sfx.pickup(); burst(e[2], e[3], SNACK_COLORS[e[1]] || ACCENT, 8); }
-      else if (e[0] === 'hit') { sfx.hit(); burst(e[2], e[3] + 20, DANGER, 16, 130); shakeT = 0.18; }
+      if (e[0] === 'jump') {
+        if (e[1] === 2) { // distinct double-jump tell: flip spin + spark ring
+          sfx.jump2();
+          if (!reduceMotion) flipT = FLIP_T;
+          burst(game.player.x, game.player.y - 26, '#ffffff', 6, 150);
+          burst(game.player.x, game.player.y - 26, ACCENT, 5, 100);
+        } else sfx.jump();
+      }
+      else if (e[0] === 'pickup') {
+        sfx.pickup();
+        burst(e[2], e[3], SNACK_COLORS[e[1]] || ACCENT, 8);
+        burst(e[2], e[3], '#ffffff', 4, 150); // white sparkle over the snack burst
+      }
+      else if (e[0] === 'hit') { sfx.hit(); burst(e[2], e[3] + 20, DANGER, 16, 130); shakeT = 0.18; flashT = HIT_FLASH_T; }
       else if (e[0] === 'over') sfx.over();
       else if (e[0] === 'start') sfx.start();
     }
@@ -355,7 +436,7 @@
     accMs = 0;
     pointerDown = false;
     particles.length = 0;
-    shakeT = 0;
+    shakeT = 0; flashT = 0; flipT = 0; landSquash = 0; heartT = 0;
     show(el.ovStart, false);
     show(el.ovOver, false);
     show(el.ovPause, false);
@@ -404,11 +485,17 @@
           dustAcc = 0;
           particles.push({ x: game.player.x - 12, y: GROUND_Y - 3, vx: -60 - Math.random() * 40, vy: -30 - Math.random() * 30, life: 0.4, t: 0, color: 'rgba(255,255,255,0.25)', r: 2.5 });
         }
+        var wasAir = !game.player.onGround, vyBefore = game.player.vy;
         game.update(16);
         accMs -= 16;
+        if (wasAir && game.player.onGround) onLand(vyBefore); // landing squash + dust
       }
       playEvents(game.takeEvents());
       if (game.state === 'over') endRound();
+      else if (game.hearts === 1) { // low-heart pulse (cosmetic)
+        heartT += dt;
+        if (heartT >= 900) { heartT = 0; sfx.heart(); }
+      } else heartT = 0;
     }
     stepParticles(dt / 1000);
     draw();

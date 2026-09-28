@@ -97,6 +97,15 @@ body {
 .chip-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--dim); }
 .chip-value { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .chip.hearts { justify-content: center; font-size: 16px; letter-spacing: 3px; color: var(--danger); min-height: 48px; }
+/* S1: hearts chip pulse when a heart is lost (class added from app.js on the
+   bomb event; the global prefers-reduced-motion rule below already disables
+   all animations, and app.js double-gates the class add). */
+.chip.hearts.fx-pulse { animation: hearts-pulse 0.45s ease-out; }
+@keyframes hearts-pulse {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.22); filter: brightness(1.6); }
+  100% { transform: scale(1); }
+}
 
 .stage {
   position: relative;

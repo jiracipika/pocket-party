@@ -91,6 +91,14 @@ html, body {
   color: #ff5d7d;
 }
 .hearts .lost { color: #3a3a52; }
+/* heart-loss pulse: class toggled from app.js on any lost heart */
+.hearts.hurt { animation: heartsHurt 0.45s ease-out; }
+@keyframes heartsHurt {
+  0% { transform: scale(1); background: transparent; }
+  25% { transform: scale(1.14); background: rgba(255, 93, 125, 0.24); }
+  60% { transform: scale(0.96); }
+  100% { transform: scale(1); background: transparent; }
+}
 .hud-cell.round .hud-value { color: var(--accent); }
 .hud-cell.round.low .hud-value { color: #ff5d7d; }
 
@@ -132,6 +140,9 @@ canvas {
   25% { opacity: 1; transform: translateY(0) scale(1.05); }
   100% { opacity: 0; transform: translateY(-26px) scale(1); }
 }
+/* combo tiers: color intensity steps toward --accent-deep (tier-3 keeps base) */
+.combo-pop.tier-5 { color: var(--accent-deep); }
+.combo-pop.tier-8 { color: var(--accent-deep); font-size: clamp(26px, 8vw, 40px); }
 
 /* ---- instructions / controls ---- */
 .instructions {
@@ -222,6 +233,7 @@ canvas {
 /* ---- reduced motion ---- */
 @media (prefers-reduced-motion: reduce) {
   .combo-pop.show { animation: none; opacity: 0.9; }
+  .hearts.hurt { animation: none; }
   .icon-btn, .btn { transition: none; }
   .icon-btn:active, .btn:active { transform: none; }
 }

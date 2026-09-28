@@ -149,14 +149,14 @@
 
   // Pattern for the ink background, created lazily once loaded.
   var inkPattern = null;
-  function drawBackground(s) {
+  function drawBackground(s, cam) {
     if (art.ink && !inkPattern) {
       try { inkPattern = ctx.createPattern(art.ink, 'repeat'); } catch (e) { inkPattern = null; }
     }
     if (inkPattern) {
       // keep the stipple fixed to the world so it pans subtly with the camera
       ctx.save();
-      ctx.translate(0, sx((s.cameraY * 0.15) % 64));
+      ctx.translate(0, sx((cam * 0.15) % 64));
       ctx.fillStyle = inkPattern;
       ctx.fillRect(0, -sx(64), canvas.width, canvas.height + sx(128));
       ctx.restore();
@@ -167,7 +167,7 @@
       ctx.fillStyle = '#22223a';
       for (var i = 0; i < 24; i++) {
         var px = ((i * 97) % LOGICAL_W) * scale;
-        var py = (((i * 53 + ((s.cameraY * 0.15) % viewH)) % viewH) + viewH) % viewH * scale;
+        var py = (((i * 53 + ((cam * 0.15) % viewH)) % viewH) + viewH) % viewH * scale;
         ctx.fillRect(px, py, scale * 2, scale * 2);
       }
     }
@@ -192,7 +192,66 @@
       var p = particles[i];
       p.t += dt;
       if (p.t >= p.life) { particles.splice(i, 1); continue; }
-      p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 700 * dt;
+      p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 700 * (p.g || 1) * dt;
+    }
+  }
+
+  // ---- landing juice (S1: draw-time + event-driven only, no core rules) ----
+  var SQUASH_DUR = 0.12;  // squash-and-spring-back on the top settled layer
+  var FLASH_DUR = 0.25;   // perfect-drop ring expansion
+  var SHAKE_DUR = 0.12;   // micro-shake on a perfect drop
+  var juice = {
+    squashT: -1, squashIdx: -1,   // scaleY dip keyed to the top layer index
+    flashT: -1,                   // expanding ring timer
+    flashX: 0, flashY: 0,         // ring center in world coords
+    flashStreak: 1,
+    shakeT: -1
+  };
+  // eased camera shown on screen: core snaps state.cameraY per drop, the
+  // renderer lerps toward it so the tower rise reads as fluid (S1)
+  var camDisplay = 0;
+
+  function stepJuice(dt) {
+    if (juice.squashT >= 0) { juice.squashT += dt; if (juice.squashT > SQUASH_DUR) juice.squashT = -1; }
+    if (juice.flashT >= 0) { juice.flashT += dt; if (juice.flashT > FLASH_DUR) juice.flashT = -1; }
+    if (juice.shakeT >= 0) { juice.shakeT += dt; if (juice.shakeT > SHAKE_DUR) juice.shakeT = -1; }
+  }
+
+  // grey dust kicked sideways from a placed layer's bottom corners
+  function dustPuff(x, y, dir, n) {
+    if (reducedMotion) n = Math.min(n, 3);
+    for (var i = 0; i < n; i++) {
+      particles.push({
+        x: x + (Math.random() - 0.5) * 6,
+        y: y,
+        vx: dir * (30 + Math.random() * 110),
+        vy: -(15 + Math.random() * 70),
+        life: 0.25 + Math.random() * 0.2,
+        t: 0,
+        hue: 0,
+        size: 2 + Math.random() * 2,
+        g: 0.3,      // light gravity so the dust hangs, then settles
+        dust: true
+      });
+    }
+  }
+
+  // landing feedback for a 'drop' | 'perfect' lastEvent (called from doDrop;
+  // the base drop — layers:0 -> 1 — lands on the ground and gets it too)
+  function triggerLanding(s, ev) {
+    var li = s.layers.length - 1;
+    if (li < 0) return;
+    var t = s.layers[li];
+    var by = viewH - t.y + camDisplay - 1; // layer bottom edge, logical screen y
+    dustPuff(t.x + 1, by, -1, 5);
+    dustPuff(t.x + t.w - 1, by, 1, 5);
+    if (!reducedMotion) { juice.squashIdx = li; juice.squashT = 0; }
+    if (ev.type === 'perfect') {
+      juice.flashT = 0;
+      juice.flashX = t.x + t.w / 2;
+      juice.flashY = t.y + t.h / 2;
+      juice.flashStreak = ev.streak || 1;
+      if (!reducedMotion) juice.shakeT = 0;
     }
   }
 
@@ -254,13 +313,19 @@
 
   function draw() {
     var s = game.getState();
+    var camDraw = camDisplay; // one shared eased camera for every world->screen transform
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    drawBackground(s);
+    // perfect-drop micro-shake (suppressed under prefers-reduced-motion)
+    if (juice.shakeT >= 0 && !reducedMotion) {
+      var q = 1 - juice.shakeT / SHAKE_DUR;
+      ctx.translate(Math.sin(juice.shakeT * 95) * 2.5 * q, Math.cos(juice.shakeT * 81) * 2 * q);
+    }
+    drawBackground(s, camDraw);
 
     // world transform: world y up -> screen y down, plus camera pan
     function worldToScreenY(worldYBottom, h) {
       // logical screen coords (0..viewH), then scaled by canvas transform
-      return viewH - (worldYBottom + h) + s.cameraY;
+      return viewH - (worldYBottom + h) + camDraw;
     }
 
     // settled layers
@@ -268,7 +333,17 @@
       var l = s.layers[li];
       var sy0 = worldToScreenY(l.y, l.h);
       if (sy0 > viewH + 40 || sy0 + l.h < -40) continue;
-      drawBlock({ x: l.x, y: sy0, w: l.w, h: l.h }, l.hue, l.perfect);
+      var bx = l.x, by = sy0, bw = l.w, bh = l.h;
+      if (!reducedMotion && li === juice.squashIdx && juice.squashT >= 0) {
+        // squash anchored to the bottom edge, springing back with a small overshoot
+        var sp = juice.squashT / SQUASH_DUR;
+        var k = 1 - 0.15 * Math.cos(sp * Math.PI) * (1 - sp); // 0.85 -> ~1.03 -> 1
+        bh = l.h * k;
+        bw = l.w * (1 + (1 - k) * 0.6); // slight width bulge for volume
+        by = sy0 + (l.h - bh);
+        bx = l.x - (bw - l.w) / 2;
+      }
+      drawBlock({ x: bx, y: by, w: bw, h: bh }, l.hue, l.perfect);
     }
 
     // moving block
@@ -312,9 +387,28 @@
     for (var pi = 0; pi < particles.length; pi++) {
       var p = particles[pi];
       var a = 1 - p.t / p.life;
-      ctx.globalAlpha = a;
-      ctx.fillStyle = 'hsl(' + p.hue + ', 90%, 65%)';
+      ctx.globalAlpha = a * (p.dust ? 0.45 : 1);
+      ctx.fillStyle = p.dust ? '#bebece' : 'hsl(' + p.hue + ', 90%, 65%)';
       ctx.fillRect(sx(p.x) - p.size / 2, sx(p.y) - p.size / 2, p.size, p.size);
+      ctx.globalAlpha = 1;
+    }
+
+    // perfect-drop flash ring, expanding; intensity scales with the streak
+    // (capped). Under reduced motion it stays a static pulse-less highlight
+    // that only fades out.
+    if (juice.flashT >= 0) {
+      var fp = juice.flashT / FLASH_DUR;
+      var st = Math.min(juice.flashStreak - 1, 4); // cap the streak scaling
+      var maxR = 38 * (1 + st * 0.15);
+      var e = reducedMotion ? 0.6 : 1 - Math.pow(1 - fp, 3); // ease-out expansion
+      var fr = 6 + (maxR - 6) * e;
+      ctx.globalAlpha = 1 - fp;
+      ctx.strokeStyle = '#ffe66d';
+      ctx.lineWidth = Math.max(1.5, sx(2 + st * 0.5));
+      ctx.beginPath();
+      ctx.ellipse(sx(juice.flashX), sx(viewH - juice.flashY + camDraw),
+        sx(fr), sx(fr * 0.62), 0, 0, Math.PI * 2);
+      ctx.stroke();
       ctx.globalAlpha = 1;
     }
 
@@ -375,6 +469,9 @@
     hide(screenStart); hide(screenOver); hide(screenPause);
     show(hud);
     game.start();
+    // camera and juice reset with the round: no eased slide-in, no stale timers
+    camDisplay = 0;
+    juice.squashT = -1; juice.flashT = -1; juice.shakeT = -1;
     refreshHud();
     hintT = 0; hintDone = false; hintAlpha = 0;
     AudioSys.unlock();
@@ -405,16 +502,19 @@
     var s2 = game.getState();
     var ev = s2.lastEvent;
     if (!ev) return;
-    if (ev.type === 'perfect' || ev.type === 'drop') hintDone = true;
+    if (ev.type === 'perfect' || ev.type === 'drop') {
+      hintDone = true;
+      triggerLanding(s2, ev); // S1 landing squash + dust (+ ring/shake on perfect)
+    }
     if (ev.type === 'perfect') {
       AudioSys.perfect(ev.streak);
       var t = s2.layers[s2.layers.length - 1];
-      burst(t.x + t.w / 2, viewH - (t.y + t.h / 2) + s2.cameraY, t.hue, 18);
+      burst(t.x + t.w / 2, viewH - (t.y + t.h / 2) + camDisplay, t.hue, 18);
     } else if (ev.type === 'drop') {
       AudioSys.drop();
       if (s2.layers.length > layersBefore) {
         var t2 = s2.layers[s2.layers.length - 1];
-        burst(t2.x + t2.w / 2, viewH - (t2.y + t2.h / 2) + s2.cameraY, t2.hue, 8);
+        burst(t2.x + t2.w / 2, viewH - (t2.y + t2.h / 2) + camDisplay, t2.hue, 8);
       }
     } else if (ev.type === 'miss') {
       AudioSys.miss();
@@ -547,6 +647,13 @@
     last = now;
     game.update(dt);
     stepParticles(dt);
+    stepJuice(dt);
+    // eased camera (S1): core snaps state.cameraY per drop; the renderer eases
+    // toward it. Reduced motion snaps directly — this is smoothing, not added
+    // motion, so it stays on either way.
+    var camTarget = game.getState().cameraY;
+    if (reducedMotion) camDisplay = camTarget;
+    else camDisplay += (camTarget - camDisplay) * Math.min(1, dt * 8);
     if (game.getState().phase === 'playing' && !hintDone) {
       hintT += dt;
       hintAlpha = Math.min(1, hintT / 0.3) *
