@@ -23,6 +23,7 @@ var PocketCore=(function(){var module={exports:{}};
   var MAX_MULT = 3;
   var FALL_BASE = 145;            // px/sec start
   var FALL_MAX = 260;            // px/sec cap
+  var BOMB_MIN_BASKET_DIST = 70; // bombs never spawn this close to the basket
   var SPAWN_MIN = 0.45, SPAWN_MAX = 0.85; // seconds between spawns
 
   function mulberry32(seed) {
@@ -80,7 +81,20 @@ var PocketCore=(function(){var module={exports:{}};
       g._spawnTimer = interval;
       var isBomb = rng() < (0.18 + 0.1 * prog);             // bomb ratio escalates
       var speed = FALL_BASE + (FALL_MAX - FALL_BASE) * prog * (0.8 + 0.4 * rng());
+      speed = Math.min(FALL_MAX, speed); // variance must never exceed the cap
       var x = clamp(ITEM_R + rng() * (W - 2 * ITEM_R), ITEM_R, W - ITEM_R);
+      if (isBomb) {
+        // spawn-time fairness: resample away from the basket so a bomb never
+        // appears with effectively zero dodge distance
+        for (var tries = 0; tries < 8 && Math.abs(x - g.basket.x) < BOMB_MIN_BASKET_DIST; tries++) {
+          x = clamp(ITEM_R + rng() * (W - 2 * ITEM_R), ITEM_R, W - ITEM_R);
+        }
+        if (Math.abs(x - g.basket.x) < BOMB_MIN_BASKET_DIST) {
+          x = g.basket.x <= W / 2
+            ? clamp(g.basket.x + BOMB_MIN_BASKET_DIST, ITEM_R, W - ITEM_R)
+            : clamp(g.basket.x - BOMB_MIN_BASKET_DIST, ITEM_R, W - ITEM_R);
+        }
+      }
       g.items.push({
         x: x, y: -ITEM_R,
         vy: speed,
@@ -176,7 +190,7 @@ var PocketCore=(function(){var module={exports:{}};
     g.togglePause = togglePause;
     g.takeEvents = takeEvents;
     g.elapsedPrivate = elapsedPrivate;
-    g.CONST = { ROUND_MS: ROUND_MS, HEARTS: HEARTS, MAX_MULT: MAX_MULT, COMBO_STEP: COMBO_STEP, FALL_MAX: FALL_MAX };
+    g.CONST = { ROUND_MS: ROUND_MS, HEARTS: HEARTS, MAX_MULT: MAX_MULT, COMBO_STEP: COMBO_STEP, FALL_MAX: FALL_MAX, BOMB_MIN_BASKET_DIST: BOMB_MIN_BASKET_DIST };
     return g;
   }
 

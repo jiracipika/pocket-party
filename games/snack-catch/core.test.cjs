@@ -193,3 +193,50 @@ test('module shape (UMD exports)', () => {
   assert.equal(typeof PocketGame.mulberry32, 'function');
   assert.equal(typeof PocketGame.VERSION, 'string');
 });
+
+// ---- S2 fairness & difficulty fixtures (added 2026-09-27) ----
+
+function seededRng(seed) { // mulberry32, matches gameplay probes
+  let a = seed | 0;
+  return function () {
+    a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+test('FALL_MAX is enforced: no item ever falls faster than the cap', () => {
+  // Seed 1 demonstrably produces ~283 px/s items in the final seconds
+  // before the clamp was added.
+  const g = PocketGame.createGame({ rng: seededRng(1) });
+  g.start();
+  let maxVy = 0;
+  for (let t = 0; t < 30000 && g.state === 'playing'; t += 16) {
+    g.update(16);
+    for (const it of g.items) maxVy = Math.max(maxVy, it.vy);
+    g.takeEvents();
+  }
+  assert.ok(maxVy <= g.CONST.FALL_MAX,
+    'item fell at ' + maxVy + ' px/s, cap is ' + g.CONST.FALL_MAX);
+});
+
+test('bombs never spawn within the dodge radius of the basket', () => {
+  // Basket idles at its default center (180); seed 1 demonstrably spawns a
+  // bomb nearly on top of it before the spawn-time distance rule existed.
+  const BOMB_MIN_BASKET_DIST = 70;
+  const g = PocketGame.createGame({ rng: seededRng(1) });
+  g.start();
+  const bombXs = [];
+  for (let t = 0; t < 30000 && g.state === 'playing'; t += 16) {
+    g.update(16);
+    for (const e of g.takeEvents()) {
+      if (e[0] === 'spawn' && e[1] === 'bomb') bombXs.push(e[2]);
+    }
+  }
+  assert.ok(bombXs.length > 0, 'fixture must actually spawn bombs');
+  for (const x of bombXs) {
+    assert.ok(Math.abs(x - 180) >= BOMB_MIN_BASKET_DIST,
+      'bomb spawned at x=' + x + ' with basket at 180 (min ' + BOMB_MIN_BASKET_DIST + ')');
+  }
+});

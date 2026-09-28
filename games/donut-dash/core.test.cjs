@@ -251,3 +251,40 @@ test('module shape (UMD exports)', () => {
   assert.equal(typeof PocketGame.clamp, 'function');
   assert.equal(typeof PocketGame.VERSION, 'string');
 });
+
+// ---- S2 fairness: readable-window regression lock (added 2026-09-27) ----
+
+function mulberry32(seed) {
+  let a = seed | 0;
+  return function () {
+    a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+test('obstacles stay readable: >=450ms from spawn to the player at every speed', () => {
+  // Idle player (no jumps): pure measurement of the spawn->reach window
+  // across the whole speed ramp 240 -> 520 over 60 seconds of play.
+  const g = PocketGame.createGame({ rng: mulberry32(42) });
+  g.start();
+  g.hearts = 1e9; // measurement run: survive crate hits for the full 60s
+  let measured = 0, minMs = Infinity;
+  for (let t = 0; t < 60000 && g.state !== 'over'; t += 16) {
+    const px0 = g.x;
+    for (const e of g.takeEvents()) {
+      if (e[0] === 'spawn-ob') {
+        // o.x is world coords; screen distance to the fixed player column
+        const readablePx = (e[2] - px0) - 90 - g.CONST.PLAYER_X;
+        const ms = readablePx / g.speed * 1000;
+        minMs = Math.min(minMs, ms);
+        measured++;
+      }
+    }
+    g.update(16);
+  }
+  assert.ok(measured > 30, 'fixture must see real obstacles, got ' + measured);
+  assert.ok(minMs >= 450,
+    'obstacle readable window dipped to ' + minMs.toFixed(0) + 'ms at speed ' + g.speed);
+});

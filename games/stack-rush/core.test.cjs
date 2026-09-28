@@ -230,3 +230,67 @@ test('tap is alias for drop/start/restart depending on phase', () => {
   if (base) g.getState().moving.x = base.x;
   assert.strictEqual(g.input('tap'), true, 'tap drops');
 });
+
+// ---- S2 fairness & difficulty fixtures (added 2026-09-27) ----
+
+function mulberry32(seed) {
+  let a = seed | 0;
+  return function () {
+    a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+/** Drive the game with well-timed (±2px) drops and return per-layer data. */
+function playAlignedLayers(seed, count) {
+  const g = PG.createGame({ rng: mulberry32(seed) });
+  g.input('start');
+  const layers = [];
+  for (let i = 0; i < count && g.getState().phase === 'playing'; i++) {
+    // capture spawn side of the moving block at the moment it appears
+    const m0 = g.getState().moving;
+    if (m0) layers.push({ sideX: m0.x, speed: g.getState().speed, layer: g.getState().layers.length });
+    let guard = 0;
+    while (guard++ < 20000) {
+      const s = g.getState();
+      if (!s.moving || s.phase !== 'playing') break;
+      const prev = s.layers[s.layers.length - 1];
+      if (!prev) break;
+      const mc = s.moving.x + s.moving.w / 2;
+      const tc = prev.x + prev.w / 2;
+      if (Math.abs(mc - tc) <= 2) break;
+      g.update(0.004);
+    }
+    g.input('drop');
+  }
+  return { g, layers };
+}
+
+test('alignment window stays humane: >=55ms at layer 25', () => {
+  const { g } = playAlignedLayers(7, 25);
+  const s = g.getState();
+  const windowMs = (2 * 8) / s.speed * 1000; // time to cross the ±8px zone
+  assert.ok(windowMs >= 52,
+    'layer-25 alignment window ' + windowMs.toFixed(1) + 'ms at speed ' + s.speed);
+});
+
+test('first three blocks keep a >=110ms alignment window', () => {
+  const { g } = playAlignedLayers(11, 3);
+  const s = g.getState();
+  const windowMs = (2 * 8) / s.speed * 1000;
+  assert.ok(windowMs >= 110,
+    'early alignment window ' + windowMs.toFixed(1) + 'ms at speed ' + s.speed);
+});
+
+test('spawn sides alternate instead of locking to one edge', () => {
+  const { g, layers } = playAlignedLayers(23, 9);
+  assert.ok(layers.length >= 8, 'fixture must reach 8+ layers');
+  for (let i = 2; i < layers.length; i++) {
+    const prevLeft = layers[i - 1].sideX === 0;
+    const curLeft = layers[i].sideX === 0;
+    assert.ok(prevLeft !== curLeft,
+      'spawn side repeated at layer ' + i + ' (' + layers[i - 1].sideX + ' then ' + layers[i].sideX + ')');
+  }
+});

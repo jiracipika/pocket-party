@@ -39,6 +39,9 @@
   var TIMER_MAX = 2.5;        // generous initial per-target timer
   var TIMER_MIN = 0.9;        // shrinks toward this as score rises
   var TIMER_MIN_SCORE = 180;  // score at which the minimum is reached
+  var CONFUSION_BONUS = 0.15; // extra seconds on hue-family traps
+  // Genuine Stroop confusables (warm/cool hue pairs): RED<->YELLOW, GREEN<->BLUE.
+  var HUE_FAMILY = [3, 2, 1, 0];
 
   function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
@@ -52,19 +55,28 @@
 
   /**
    * Pick a target slot without repeating the previous one, and pick a
-   * Stroop word that conflicts at least half the time.
+   * Stroop word that conflicts at least half the time. Conflicts bias
+   * toward the hue-family partner (the genuinely confusable pair) and
+   * family traps get slightly more time so difficulty comes from the
+   * confusion itself, not from unfair timing.
    */
   function nextTarget(prev, random) {
     var slot = pickIndex(random, SLOT_COUNT);
     if (slot === prev) slot = (slot + 1) % SLOT_COUNT; // no immediate repeats
     // ~50% of the time the word names a DIFFERENT color (the Stroop trap).
     var word = slot;
+    var confusable = false;
     if (random() < 0.5) {
-      word = pickIndex(random, SLOT_COUNT - 1);
-      if (word >= slot) word += 1;
-      if (word >= SLOT_COUNT) word = SLOT_COUNT - 1;
+      if (random() < 0.6) {
+        word = HUE_FAMILY[slot]; // the true look-alike color
+        confusable = true;
+      } else {
+        word = pickIndex(random, SLOT_COUNT - 1);
+        if (word >= slot) word += 1;
+        if (word >= SLOT_COUNT) word = SLOT_COUNT - 1;
+      }
     }
-    return { slot: slot, word: word };
+    return { slot: slot, word: word, confusable: confusable };
   }
 
   function timerFor(score) {
@@ -101,6 +113,7 @@
     var score = 0, combo = 0, bestCombo = 0, heartsLeft = hearts;
     var roundTimeLeft = ROUND_TIME; // whole-round countdown
     var targetSlot = -1, targetWord = -1;
+    var targetConfusable = false;
     var timeLeft = 0, timeTotal = 0;
     var lockTimer = 0;     // >0 while input is ignored
     var lastOutcome = null; // { hit, slot, points, reason }
@@ -109,7 +122,8 @@
       var t = nextTarget(targetSlot, random);
       targetSlot = t.slot;
       targetWord = t.word;
-      timeTotal = timerFor(score);
+      targetConfusable = t.confusable;
+      timeTotal = timerFor(score) + (t.confusable ? CONFUSION_BONUS : 0);
       timeLeft = timeTotal;
     }
 
@@ -124,6 +138,7 @@
         score = 0; combo = 0; bestCombo = 0; heartsLeft = hearts;
         roundTimeLeft = ROUND_TIME;
         targetSlot = -1; targetWord = -1;
+        targetConfusable = false;
         timeLeft = 0; timeTotal = 0; lockTimer = 0;
         lastOutcome = null;
         freshTarget();
@@ -224,6 +239,7 @@
           roundTimeLeft: roundTimeLeft,
           targetIndex: targetSlot,
           targetWord: targetWord,
+          targetConfusable: targetConfusable,
           targetTimeLeft: timeLeft,
           targetTimeTotal: timeTotal,
           lastOutcome: lastOutcome
@@ -250,6 +266,8 @@
     TIMER_MAX: TIMER_MAX,
     TIMER_MIN: TIMER_MIN,
     TIMER_MIN_SCORE: TIMER_MIN_SCORE,
+    CONFUSION_BONUS: CONFUSION_BONUS,
+    HUE_FAMILY: HUE_FAMILY,
     ROUND_TIME: ROUND_TIME
   };
 });

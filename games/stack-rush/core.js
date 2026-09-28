@@ -29,14 +29,12 @@
 
   var BASE_SPEED = 120;         // logical px / second
   var SPEED_GAIN = 8;           // speed added per layer
-  var MAX_SPEED = 340;          // capped
+  var MAX_SPEED = 300;          // capped (keeps the ±8px alignment window >= ~53ms)
 
   var START_W = 220;            // first block width
   var MIN_W = 12;               // below this the round is lost
   var DEBRIS_GRAVITY = 1400;
   var DEBRIS_LIFETIME = 1.4;    // seconds
-
-  var CAMERA_DEADZONE = 80;     // px above tower top before camera pans
 
   // ---- helpers (pure, local) -------------------------------
   function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
@@ -86,6 +84,7 @@
       height: height,
       // last-drop feedback for renderer/tests
       lastEvent: null,         // {type:'drop'|'perfect'|'miss', ...}
+      lastSpawnSide: null,     // 'left'|'right' — alternates for spawn fairness
       events: []               // queue of events this update tick consumed
     };
 
@@ -114,6 +113,7 @@
       state.cameraY = 0;
       state.time = 0;
       state.lastEvent = null;
+      state.lastSpawnSide = null;
       state.events = [];
       spawnBlock();
       return state;
@@ -123,10 +123,20 @@
       var prev = state.layers.length ? state.layers[state.layers.length - 1] : null;
       var w = prev ? prev.w : START_W;
       var dir = rng() < 0.5 ? -1 : 1;
-      // Spawn at the field edge farthest from the previous block, never
-      // already perfectly aligned (otherwise rapid tapping wins forever).
+      // First block starts centered; afterwards spawn sides strictly alternate
+      // (fairness: no permanent single-edge sweeps) and never spawn already
+      // perfectly aligned with the previous block (rapid-tap guard).
       var x = (width - w) / 2;
-      if (prev) { x = prev.x < (width - w) / 2 ? width - w : 0; dir = x === 0 ? 1 : -1; }
+      if (prev) {
+        var side = state.lastSpawnSide === null
+          ? (rng() < 0.5 ? 'left' : 'right')
+          : (state.lastSpawnSide === 'right' ? 'left' : 'right');
+        var xl = 0, xr = width - w;
+        x = side === 'left' ? xl : xr;
+        if (Math.abs(x - prev.x) < 1) x = (x === xl) ? xr : xl;
+        state.lastSpawnSide = x === xl ? 'left' : 'right';
+        dir = x === 0 ? 1 : -1;
+      }
       // clamp inside field
       x = clamp(x, 0, width - w);
       var y = towerTopY(); // bottom edge aligns with top of previous layer

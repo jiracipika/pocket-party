@@ -257,3 +257,60 @@ test('core has no DOM/window/Date/Math.random dependencies (source scan)', () =>
   assert.ok(!/document|window\b|Date\b|Math\.random|requestAnimationFrame/.test(src),
     'core must stay pure/deterministic');
 });
+
+// ---- S2 fairness: hue-family confusion model (added 2026-09-27) ----
+
+function mulberry32(seed) {
+  let a = seed | 0;
+  return function () {
+    a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+// Genuine Stroop confusables: RED<->YELLOW (warm), GREEN<->BLUE (cool).
+const HUE_FAMILY = [3, 2, 1, 0];
+
+test('family-trap targets get the confusion window bonus', () => {
+  // Scripted rng: slot pick 0.1 -> slot 0 (RED); conflict coin 0.1 -> conflict;
+  // bias coin 0.2 -> family trap -> word 3 (YELLOW).
+  const queue = [0.1, 0.1, 0.2];
+  const g = createGame({ random: () => queue.shift() ?? 0.5 });
+  g.start();
+  const s = g.getState();
+  assert.equal(s.targetIndex, 0);
+  assert.equal(s.targetWord, 3, 'conflict must land on the hue-family partner');
+  assert.ok(Math.abs(s.targetTimeTotal - (core.TIMER_MAX + 0.15)) < 1e-9,
+    'family trap window should be TIMER_MAX + CONFUSION_BONUS, got ' + s.targetTimeTotal);
+});
+
+test('non-family conflicts keep the plain window', () => {
+  // slot 0 (RED), conflict, bias coin 0.9 -> uniform branch, pick 0.2 -> word 1 (GREEN).
+  const queue = [0.1, 0.1, 0.9, 0.2];
+  const g = createGame({ random: () => queue.shift() ?? 0.5 });
+  g.start();
+  const s = g.getState();
+  assert.equal(s.targetIndex, 0);
+  assert.equal(s.targetWord, 1);
+  assert.ok(Math.abs(s.targetTimeTotal - core.TIMER_MAX) < 1e-9,
+    'non-family conflict window must stay at TIMER_MAX, got ' + s.targetTimeTotal);
+});
+
+test('conflict words land on the family partner 45-75% of the time', () => {
+  const g = createGame({ random: mulberry32(97) });
+  let conflicts = 0, family = 0;
+  for (let i = 0; i < 600; i++) {
+    g.start();
+    const s = g.getState();
+    if (s.targetWord !== s.targetIndex) {
+      conflicts++;
+      if (s.targetWord === HUE_FAMILY[s.targetIndex]) family++;
+    }
+  }
+  assert.ok(conflicts > 200, 'fixture must see real conflicts, got ' + conflicts);
+  const frac = family / conflicts;
+  assert.ok(frac >= 0.45 && frac <= 0.75,
+    'family-trap fraction ' + frac.toFixed(2) + ' outside [0.45, 0.75]');
+});
