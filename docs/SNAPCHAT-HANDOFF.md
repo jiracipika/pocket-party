@@ -18,11 +18,16 @@ Materials (2026-09-28): white placeholders replaced — donut (golden player,
 brown crates), snack (mint basket `#7dffb2`), stack (25-material hue ramp
 `hsl((k*14+40)%360, 85%, 60%)` matching the core's block hues + gold moving
 block). Duplicate controller assets deleted in all three 2026-09-26-era
-projects (donut never had one). Donut and snack tinting ran in Studio with a
-clean preview gate (no script errors); stack's materials were applied via
-project-file edits (MCP was unstable that session) and still need one clean
-in-Studio preview pass before device work. Device verification (checklist
-items 4–6) has NOT been done for any game.
+projects (donut never had one). All four projects have now passed a clean
+in-Studio preview gate (RunAndCollectLogs refresh: no script errors), and the
+scene readback confirms stack's 25 materials are wired (MovingBlock→MatMoving,
+LayerN→MatLayerN). Two benign "api is deprecated" warnings remain in the
+generated controllers — they will eventually break on a Lens Studio upgrade,
+so re-run the preview gate after any Studio update. Note: to open a specific
+project reliably, use the MCP ExecuteEditorCode call
+`model.openProject("/abs/path/Game.esproj")` — the `open -a "Lens Studio"`
+project-swap wedges Studio. Device verification (checklist items 4–6) has
+NOT been done for any game.
 
 ## Official platform references checked
 
