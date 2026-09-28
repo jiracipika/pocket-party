@@ -56,6 +56,7 @@
   var LOGICAL_H = PG.constants.H;
   var DPR_CAP = 1.5;
   var scale = 1; // canvas px per logical px
+  var viewH = LOGICAL_H; // logical units visible vertically (≥ LOGICAL_H)
 
   function resize() {
     var rect = canvas.getBoundingClientRect();
@@ -63,6 +64,9 @@
     canvas.width = Math.round(rect.width * dpr);
     canvas.height = Math.round(rect.height * dpr);
     scale = canvas.width / LOGICAL_W;
+    // full-bleed stages on tall phones show extra sky above the 640-unit
+    // playfield; the tower stays anchored to the bottom edge
+    viewH = Math.max(canvas.height / scale, LOGICAL_H);
   }
   window.addEventListener('resize', resize);
 
@@ -71,7 +75,7 @@
     var rect = canvas.getBoundingClientRect();
     return {
       x: (e.clientX - rect.left) * (LOGICAL_W / rect.width),
-      y: (e.clientY - rect.top) * (LOGICAL_H / rect.height)
+      y: (e.clientY - rect.top) * (viewH / rect.height)
     };
   }
 
@@ -117,6 +121,10 @@
   var reducedMotion = window.matchMedia &&
     window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+  // ---- first-run drop hint ----------------------------------
+  var HINT_SHOW = 3.5; // seconds before it fades itself out
+  var hintT = 0, hintDone = false, hintAlpha = 0;
+
   // ---- art assets (cached Images; primitives until loaded) ----
   // Textures are opaque tiles: ink-grain (#10101b stipple) for the
   // background, block-grain (warm-yellow stipple) clipped inside blocks
@@ -159,7 +167,7 @@
       ctx.fillStyle = '#22223a';
       for (var i = 0; i < 24; i++) {
         var px = ((i * 97) % LOGICAL_W) * scale;
-        var py = (((i * 53 + ((s.cameraY * 0.15) % LOGICAL_H)) % LOGICAL_H) + LOGICAL_H) % LOGICAL_H * scale;
+        var py = (((i * 53 + ((s.cameraY * 0.15) % viewH)) % viewH) + viewH) % viewH * scale;
         ctx.fillRect(px, py, scale * 2, scale * 2);
       }
     }
@@ -251,15 +259,15 @@
 
     // world transform: world y up -> screen y down, plus camera pan
     function worldToScreenY(worldYBottom, h) {
-      // logical screen coords (0..H), then scaled by canvas transform
-      return LOGICAL_H - (worldYBottom + h) + s.cameraY;
+      // logical screen coords (0..viewH), then scaled by canvas transform
+      return viewH - (worldYBottom + h) + s.cameraY;
     }
 
     // settled layers
     for (var li = 0; li < s.layers.length; li++) {
       var l = s.layers[li];
       var sy0 = worldToScreenY(l.y, l.h);
-      if (sy0 > LOGICAL_H + 40 || sy0 + l.h < -40) continue;
+      if (sy0 > viewH + 40 || sy0 + l.h < -40) continue;
       drawBlock({ x: l.x, y: sy0, w: l.w, h: l.h }, l.hue, l.perfect);
     }
 
@@ -309,6 +317,18 @@
       ctx.fillRect(sx(p.x) - p.size / 2, sx(p.y) - p.size / 2, p.size, p.size);
       ctx.globalAlpha = 1;
     }
+
+    // drop hint (first run only)
+    if (hintAlpha > 0.01) {
+      var bob = reducedMotion ? 0 : Math.sin(hintT * 4) * 3;
+      ctx.globalAlpha = hintAlpha;
+      ctx.fillStyle = '#ffe66d';
+      ctx.textAlign = 'center';
+      ctx.font = '800 ' + Math.round(15 * scale) + 'px "Avenir Next", "Trebuchet MS", system-ui, sans-serif';
+      ctx.fillText('TAP TO DROP THE BLOCK', canvas.width / 2, sx(viewH - 150 + bob));
+      ctx.textAlign = 'left';
+      ctx.globalAlpha = 1;
+    }
   }
 
   // ---- HUD / screens ---------------------------------------
@@ -356,6 +376,7 @@
     show(hud);
     game.start();
     refreshHud();
+    hintT = 0; hintDone = false; hintAlpha = 0;
     AudioSys.unlock();
     AudioSys.ui();
   }
@@ -384,15 +405,16 @@
     var s2 = game.getState();
     var ev = s2.lastEvent;
     if (!ev) return;
+    if (ev.type === 'perfect' || ev.type === 'drop') hintDone = true;
     if (ev.type === 'perfect') {
       AudioSys.perfect(ev.streak);
       var t = s2.layers[s2.layers.length - 1];
-      burst(t.x + t.w / 2, LOGICAL_H - (t.y + t.h / 2) + s2.cameraY, t.hue, 18);
+      burst(t.x + t.w / 2, viewH - (t.y + t.h / 2) + s2.cameraY, t.hue, 18);
     } else if (ev.type === 'drop') {
       AudioSys.drop();
       if (s2.layers.length > layersBefore) {
         var t2 = s2.layers[s2.layers.length - 1];
-        burst(t2.x + t2.w / 2, LOGICAL_H - (t2.y + t2.h / 2) + s2.cameraY, t2.hue, 8);
+        burst(t2.x + t2.w / 2, viewH - (t2.y + t2.h / 2) + s2.cameraY, t2.hue, 8);
       }
     } else if (ev.type === 'miss') {
       AudioSys.miss();
@@ -525,6 +547,14 @@
     last = now;
     game.update(dt);
     stepParticles(dt);
+    if (game.getState().phase === 'playing' && !hintDone) {
+      hintT += dt;
+      hintAlpha = Math.min(1, hintT / 0.3) *
+        (hintT > HINT_SHOW ? Math.max(0, 1 - (hintT - HINT_SHOW) / 0.4) : 1);
+      if (hintT > HINT_SHOW + 0.4) hintDone = true;
+    } else if (hintAlpha > 0) {
+      hintAlpha = Math.max(0, hintAlpha - dt * 4);
+    }
     draw();
     rafId = requestAnimationFrame(frame);
   }

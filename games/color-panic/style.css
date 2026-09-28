@@ -22,6 +22,7 @@ html, body {
 
 .stage {
   min-height: 100vh;
+  min-height: 100dvh;
   max-width: 560px;
   margin: 0 auto;
   padding: 10px clamp(10px, 3vw, 24px) 16px;
@@ -94,12 +95,19 @@ html, body {
 .hud-cell.round.low .hud-value { color: #ff5d7d; }
 
 /* ---- canvas ---- */
-.canvas-wrap { position: relative; }
+/* Fills the space left under the HUD so tall phones don't show a dead
+   bottom half; the in-canvas layout derives everything from CSS size. */
+.canvas-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 270px;
+}
 canvas {
+  position: absolute;
+  inset: 0;
   display: block;
   width: 100%;
-  height: auto;
-  aspect-ratio: 5 / 4;
+  height: 100%;
   border-radius: 18px;
   background: #12121d;
   border: 1px solid #23233a;
