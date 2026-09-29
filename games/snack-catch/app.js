@@ -72,6 +72,8 @@
     recapBombs: document.getElementById('recapBombs'),
     recapCombo: document.getElementById('recapCombo'),
     recapBest: document.getElementById('recapBest'),
+    startBest: document.getElementById('startBest'),
+    startBestLine: document.getElementById('startBestLine'),
     srStatus: document.getElementById('srStatus')
   };
 
@@ -432,6 +434,9 @@
   function syncHud() {
     el.score.textContent = String(game.score);
     el.best.textContent = String(game.best);
+    // Start-card "Personal best" line mirrors #hudBest (display only).
+    el.startBest.textContent = String(game.best);
+    el.startBestLine.classList.toggle('hidden', !(game.best > 0));
     el.time.textContent = String(Math.ceil(game.timeLeft / 1000));
     el.combo.textContent = 'x' + game.multiplier;
     el.hearts.textContent = fmtHearts(game.hearts);
@@ -473,7 +478,9 @@
     el.recapMissed.textContent = String(game.missed);
     el.recapBombs.textContent = String(game.bombsHit);
     el.recapCombo.textContent = 'x' + game.multiplier;
-    el.recapBest.textContent = newBest && game.score > 0 ? 'Yes!' : 'No';
+    var isNewBest = newBest && game.score > 0;
+    el.recapBest.textContent = isNewBest ? 'Yes!' : 'No';
+    el.recapBest.classList.toggle('is-new-best', isNewBest);  // badge pill (display only)
     show(el.ovOver, true);
     setPauseEnabled(false);
     announce('Round over. Score ' + game.score + '.');

@@ -42,6 +42,8 @@
   var el = {
     score: document.getElementById('hudScore'),
     best: document.getElementById('hudBest'),
+    startBestLine: document.getElementById('startBestLine'),
+    startBest: document.getElementById('startBest'),
     dist: document.getElementById('hudDist'),
     hearts: document.getElementById('hudHearts'),
     ovStart: document.getElementById('ovStart'),
@@ -117,6 +119,9 @@
   // ---------- game state ----------
   var game = PG.createGame({ rng: PG.mulberry32((Math.random() * 0xffffffff) >>> 0) });
   game.best = loadBest();
+  // start-card personal-best line (display-only, mirrors the stored best)
+  el.startBest.textContent = String(game.best);
+  if (game.best > 0) el.startBestLine.classList.remove('hidden');
   var particles = [];
   var raf = null, lastTs = 0, accMs = 0;
   var running = false;       // rAF loop on
@@ -425,6 +430,7 @@
     el.recapHits.textContent = String(game.hits);
     el.recapJumps.textContent = String(game.jumpsUsed);
     el.recapBest.textContent = newBest && game.score > 0 ? 'Yes!' : 'No';
+    el.recapBest.classList.toggle('is-new-best', newBest && game.score > 0);
     show(el.ovOver, true);
     setPauseEnabled(false);
     announce('Run over. Score ' + game.score + '.');

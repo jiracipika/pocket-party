@@ -39,6 +39,8 @@
   var screenPause = $('screen-pause');
   var screenOver = $('screen-over');
   var bestStartEl = $('best-start');
+  var startBestLineEl = $('startBestLine');
+  var startBestEl = $('startBest');
   var finalScoreEl = $('final-score');
   var recapScoreEl = $('recap-score-val');
   var recapPerfectEl = $('recap-perfect');
@@ -447,6 +449,12 @@
   function setBest(v) {
     try { store.setItem(BEST_KEY, String(v)); } catch (e) { /* ignore */ }
   }
+  // keeps both start-card best rows in sync (arcade BEST stat + personal-best line)
+  function refreshStartBest(v) {
+    bestStartEl.textContent = String(v);
+    startBestEl.textContent = String(v);
+    if (v > 0) show(startBestLineEl); else hide(startBestLineEl);
+  }
 
   function showOver() {
     var s = game.getState();
@@ -458,8 +466,14 @@
     recapPerfectEl.textContent = String(s.perfectCount);
     recapStreakEl.textContent = String(s.bestStreak);
     recapBestEl.textContent = String(best);
-    bestStartEl.textContent = String(best);
-    if (isBest && s.score > 0) show(newBestEl); else hide(newBestEl);
+    refreshStartBest(best);
+    if (isBest && s.score > 0) {
+      show(newBestEl);
+      newBestEl.classList.add('is-new-best'); // accent pill treatment
+    } else {
+      hide(newBestEl);
+      newBestEl.classList.remove('is-new-best');
+    }
     hide(shareStatusEl);
     show(screenOver);
   }
@@ -595,7 +609,7 @@
     game.reset();
     hide(screenPause); hide(hud);
     show(screenStart);
-    bestStartEl.textContent = String(getBest());
+    refreshStartBest(getBest());
   });
 
   document.addEventListener('keydown', function (e) {
@@ -639,7 +653,7 @@
 
   // ---- boot -------------------------------------------------
   resize();
-  bestStartEl.textContent = String(getBest());
+  refreshStartBest(getBest());
   var last = performance.now();
   var rafId = 0;
   function frame(now) {

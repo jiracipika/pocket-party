@@ -83,6 +83,8 @@
   var finalBest = document.getElementById('finalBest');
   var newBest = document.getElementById('newBest');
   var overTitle = document.getElementById('overTitle');
+  var startBestLine = document.getElementById('startBestLine');
+  var startBest = document.getElementById('startBest');
 
   /* ---------- guarded localStorage ---------- */
   var BEST_KEY = 'color-panic-best';
@@ -94,6 +96,11 @@
   function saveBest(v) {
     best = v;
     try { window.localStorage.setItem(BEST_KEY, String(v)); } catch (e) { /* ignore */ }
+  }
+  // start-card personal best (display-only, mirrors the HUD best chip)
+  if (best > 0 && startBestLine && startBest) {
+    startBest.textContent = String(best);
+    startBestLine.classList.remove('hidden');
   }
 
   /* ---------- game ---------- */
@@ -503,7 +510,9 @@
       finalScore.textContent = String(s.score);
       finalCombo.textContent = 'x' + s.bestCombo;
       finalBest.textContent = String(best);
-      newBest.hidden = !(s.score > 0 && s.score >= best && s.score > Number(overlay.dataset.prevBest || 0));
+      var isNewBest = s.score > 0 && s.score >= best && s.score > Number(overlay.dataset.prevBest || 0);
+      newBest.hidden = !isNewBest;
+      newBest.classList.toggle('is-new-best', isNewBest);
     }
   }
 

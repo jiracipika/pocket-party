@@ -1,11 +1,14 @@
-/* Color Panic — #0a0a0f bg, #1c1c2e cards, white text, lilac accent #bd9cff */
+/* Color Panic — UI v2: deep arcade chrome on #0a0a0f, lilac accent #bd9cff.
+   The game's ink stays inside the canvas; UI text stays single-accent. */
 :root {
   --bg: #0a0a0f;
   --card: #1c1c2e;
   --text: #ffffff;
   --accent: #bd9cff;
+  --accent-light: #d9c5ff;
   --accent-deep: #8f6cff;
   --muted: #9a9ab5;
+  --hairline: rgba(255, 255, 255, 0.1);
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -13,12 +16,15 @@
 html, body {
   margin: 0;
   padding: 0;
-  background: var(--bg);
+  /* soft fixed accent glow behind the stage */
+  background: radial-gradient(130% 55% at 50% -12%, rgba(189, 156, 255, 0.13), transparent 62%), #0a0a0f;
   color: var(--text);
   font-family: "Avenir Next", "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
   height: 100%;
   overscroll-behavior: none;
 }
+
+.hidden { display: none; }
 
 .stage {
   min-height: 100vh;
@@ -43,15 +49,18 @@ html, body {
   font-weight: 800;
   letter-spacing: 0.22em;
   font-size: clamp(14px, 4vw, 19px);
-  color: var(--accent);
   white-space: nowrap;
+  background: linear-gradient(180deg, var(--accent-light), var(--accent));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 .icon-btn {
   min-width: 44px;
   min-height: 44px;
-  border: 1px solid #2c2c48;
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 12px;
-  background: var(--card);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.03));
   color: var(--text);
   font-size: 18px;
   cursor: pointer;
@@ -59,20 +68,26 @@ html, body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: transform 0.06s ease, background 0.15s ease;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition: transform 0.06s ease, background 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
 }
-.icon-btn:active, .icon-btn.pressed { transform: scale(0.9); background: #26263e; }
-.icon-btn[aria-pressed="true"] { color: var(--accent); border-color: var(--accent-deep); }
+.icon-btn:active, .icon-btn.pressed { transform: scale(0.9); background: rgba(255, 255, 255, 0.12); }
+.icon-btn[aria-pressed="true"] {
+  color: var(--accent);
+  border-color: rgba(189, 156, 255, 0.55);
+  box-shadow: 0 0 0 1px rgba(189, 156, 255, 0.2), 0 6px 18px rgba(189, 156, 255, 0.18);
+}
 
-/* ---- HUD ---- */
+/* ---- HUD chips ---- */
 .hud {
   display: flex;
   align-items: stretch;
   gap: 8px;
 }
 .hud-cell {
-  background: var(--card);
-  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.03));
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
   padding: 6px 14px;
   display: flex;
   flex-direction: column;
@@ -83,6 +98,7 @@ html, body {
 .hud-cell:first-child, .hud-cell:last-child { flex: 1; }
 .hud-label { font-size: 10px; letter-spacing: 0.18em; color: var(--muted); }
 .hud-value { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; }
+#scoreVal { color: var(--accent); }
 .hearts {
   flex: 1.4;
   flex-direction: row;
@@ -118,7 +134,8 @@ canvas {
   height: 100%;
   border-radius: 18px;
   background: #12121d;
-  border: 1px solid #23233a;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.5);
   touch-action: manipulation;
 }
 .combo-pop {
@@ -131,7 +148,7 @@ canvas {
   font-weight: 900;
   font-size: clamp(22px, 7vw, 34px);
   color: var(--accent);
-  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6);
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6), 0 0 22px rgba(189, 156, 255, 0.35);
   opacity: 0;
 }
 .combo-pop.show { animation: comboUp 0.6s ease-out; }
@@ -140,9 +157,16 @@ canvas {
   25% { opacity: 1; transform: translateY(0) scale(1.05); }
   100% { opacity: 0; transform: translateY(-26px) scale(1); }
 }
-/* combo tiers: color intensity steps toward --accent-deep (tier-3 keeps base) */
-.combo-pop.tier-5 { color: var(--accent-deep); }
-.combo-pop.tier-8 { color: var(--accent-deep); font-size: clamp(26px, 8vw, 40px); }
+/* combo tiers: intensity steps toward --accent-deep (tier-3 keeps base) */
+.combo-pop.tier-5 {
+  color: var(--accent-deep);
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6), 0 0 26px rgba(189, 156, 255, 0.55);
+}
+.combo-pop.tier-8 {
+  color: var(--accent-deep);
+  font-size: clamp(26px, 8vw, 40px);
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6), 0 0 34px rgba(189, 156, 255, 0.8);
+}
 
 /* ---- instructions / controls ---- */
 .instructions {
@@ -160,67 +184,132 @@ canvas {
   gap: 8px;
   min-height: 118px;
 }
+/* personal-best line above START; unhidden from app.js when best > 0 */
+.best-line {
+  margin: 0;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.best-line b {
+  color: var(--accent);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
 .btn {
   min-width: 44px;
-  min-height: 48px;
+  min-height: 44px;
   padding: 12px 34px;
   border-radius: 14px;
-  border: 1px solid #2c2c48;
-  background: var(--card);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.06);
   color: var(--text);
   font-size: 16px;
   font-weight: 800;
   letter-spacing: 0.14em;
   cursor: pointer;
-  transition: transform 0.06s ease, background 0.15s ease, box-shadow 0.15s ease;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition: transform 0.06s ease, background 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
 }
-.btn:active, .btn.pressed { transform: scale(0.94); background: #26263e; }
+.btn:active, .btn.pressed { transform: scale(0.97); background: rgba(255, 255, 255, 0.11); }
 .btn.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #16102a;
-  box-shadow: 0 4px 0 var(--accent-deep);
+  background: linear-gradient(180deg, #d9c5ff, #bd9cff);
+  border-color: rgba(255, 255, 255, 0.35);
+  color: #221238;
+  box-shadow: 0 10px 26px rgba(189, 156, 255, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.35);
 }
-.btn.primary:active, .btn.primary.pressed { box-shadow: 0 1px 0 var(--accent-deep); transform: translateY(3px); }
+.btn.primary:active, .btn.primary.pressed {
+  transform: scale(0.96) translateY(1px);
+  box-shadow: 0 5px 14px rgba(189, 156, 255, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
 .share-status { margin: 0; min-height: 18px; font-size: 12px; color: var(--muted); }
+
+/* ---- focus (buttons + links) ---- */
+.btn:focus-visible,
+.icon-btn:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
 
 /* ---- overlay / recap ---- */
 .overlay {
   position: fixed;
   inset: 0;
-  background: rgba(6, 6, 12, 0.82);
+  background: rgba(7, 7, 14, 0.82);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 20px;
   z-index: 10;
 }
+@supports ((backdrop-filter: blur(10px)) or (-webkit-backdrop-filter: blur(10px))) {
+  .overlay {
+    -webkit-backdrop-filter: blur(10px) saturate(130%);
+    backdrop-filter: blur(10px) saturate(130%);
+  }
+}
 .overlay[hidden] { display: none; }
 .card {
-  background: var(--card);
-  border: 1px solid #2c2c48;
+  background: linear-gradient(180deg, #282242, #1b1830);
+  border: 1px solid var(--hairline);
   border-radius: 20px;
   padding: 22px 26px;
   width: min(360px, 92vw);
   text-align: center;
-  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+/* card entrance (this game hides the overlay via the [hidden] attribute) */
+.overlay:not([hidden]) .card { animation: card-in 0.18s ease-out; }
+@keyframes card-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 .card h2 {
   margin: 0 0 12px;
   font-size: 24px;
   letter-spacing: 0.14em;
-  color: var(--accent);
+  background: linear-gradient(180deg, var(--accent-light), var(--accent));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+@supports not ((-webkit-background-clip: text) or (background-clip: text)) {
+  .brand, .card h2 {
+    background: none;
+    color: var(--accent);
+  }
 }
 .recap { margin: 0 0 8px; }
 .recap div {
   display: flex;
   justify-content: space-between;
   padding: 7px 4px;
-  border-bottom: 1px solid #26263e;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
 }
 .recap dt { color: var(--muted); }
 .recap dd { margin: 0; font-weight: 800; font-variant-numeric: tabular-nums; }
-.new-best { color: var(--accent); font-weight: 800; margin: 6px 0 0; }
+.recap div:first-child dd { color: var(--accent); }
+/* new-best badge: accent pill, toggled with .is-new-best from app.js */
+.new-best { margin: 8px 0 0; font-weight: 800; }
+.new-best.is-new-best {
+  display: inline-block;
+  background: var(--accent);
+  color: #221238;
+  border-radius: 999px;
+  padding: 2px 10px;
+  animation: best-pop 0.24s ease-out;
+}
+.new-best.is-new-best::before {
+  content: "\2726"; /* ✦ */
+  margin-right: 6px;
+  font-size: 0.85em;
+}
+@keyframes best-pop {
+  0% { transform: scale(0.5); opacity: 0; }
+  60% { transform: scale(1.1); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
 .overlay-actions {
   display: flex;
   gap: 10px;
@@ -236,6 +325,8 @@ canvas {
   .hearts.hurt { animation: none; }
   .icon-btn, .btn { transition: none; }
   .icon-btn:active, .btn:active { transform: none; }
+  .overlay:not([hidden]) .card { animation: none; }
+  .new-best.is-new-best { animation: none; }
 }
 
 @media (min-width: 720px) {
