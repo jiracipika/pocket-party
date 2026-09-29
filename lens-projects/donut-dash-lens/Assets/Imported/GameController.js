@@ -34,10 +34,27 @@ var PocketCore=(function(){var module={exports:{}};
 
   var IFRAMES = 1.2;             // seconds of mercy invulnerability after a hit
   var PICKUP_PTS = 25;
+  var CHAIN_TIER2 = 5;           // consecutive pickups for x2
+  var CHAIN_TIER3 = 10;          // consecutive pickups for x3
+
+  // S4 variety: rare pickups + spring crates (all weights via injected rng)
+  var GOLDEN_CHANCE = 0.04;      // per-trail upgrade to a golden donut
+  var GOLDEN_MULT = 3;           // golden donut point multiplier
+  var SHIELD_CHANCE = 0.05;      // rare shield pickup (eats one crash)
+  var MAGNET_CHANCE = 0.05;      // rare magnet pickup
+  var MAGNET_TIME = 5;           // seconds of pickup attraction
+  var MAGNET_RADIUS = 80;        // px pull radius
+  var MAGNET_PULL = 340;         // px/s toward the player
+  var SPECIAL_MIN_X = 800;       // no shield/magnet in the opening
+  var POWERUP_COOLDOWN = 8;      // seconds between shield/magnet spawns
+  var SPRING_CHANCE = 0.18;      // of crate-head groups past SPRING_PROG
+  var SPRING_PROG = 0.35;        // difficulty fraction when springs may appear
+  var SPRING_V = 760;            // bounce impulse (below JUMP_V)
   var SCORE_PER_PX = 1 / 12;     // distance -> score
   var PX_PER_M = 32;             // distance readout
 
   var FIRST_OBST_AT = 520;       // world x of the first obstacle group
+  var GAP_RECOVERY = 140;        // extra px of gap after tall/double groups
 
   var KINDS = ['apple', 'donut', 'cookie', 'banana'];
 
@@ -53,6 +70,11 @@ var PocketCore=(function(){var module={exports:{}};
 
   function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
+  // Snack-chain reward tier for a run of consecutive pickups (crash resets).
+  function chainMultFor(chain) {
+    return chain >= CHAIN_TIER3 ? 3 : chain >= CHAIN_TIER2 ? 2 : 1;
+  }
+
   function createGame(opts) {
     opts = opts || {};
     var rng = opts.rng || function () { return 0.5; };
@@ -67,11 +89,16 @@ var PocketCore=(function(){var module={exports:{}};
       speed: SPEED_BASE,
       iframes: 0,
       pickupsGot: 0, hits: 0, jumpsUsed: 0,
+      chain: 0, bestChain: 0, chainMult: 1,  // consecutive pickups, crash resets
+      pickupScore: 0,                        // snack points with chain multipliers
+      shield: false,                         // eats one crash instead of a heart
+      magnetT: 0,                            // seconds of pickup attraction left
       player: { x: PLAYER_X, y: GROUND_Y, w: PLAYER_W, h: PLAYER_H, vy: 0, onGround: true, jumps: 0 },
       obstacles: [],             // world-space: {x (left), y (top), w, h, kind, hit}
       pickups: [],               // world-space: {x (center), y (center), r, kind}
-      events: [],                // ['jump'|'pickup'|'hit'|'spawn-ob'|'over'|'start'|'pause'|'resume', ...]
+      events: [],                // ['jump'|'pickup'|'hit'|'spring'|'shield-used'|'spawn-ob'|'over'|'start'|'pause'|'resume', ...]
       _nextObstX: FIRST_OBST_AT,
+      _nextSpecialAt: 0,
       _rng: rng
     };
 
@@ -81,8 +108,10 @@ var PocketCore=(function(){var module={exports:{}};
 
     // Edge-to-edge gap between obstacle groups. Always >= ~1.05s of run time,
     // so a land-then-rejump is possible at every speed the game can reach.
-    function nextGap(speed, r) {
-      return speed * 1.05 + r * (120 + speed * 0.45);
+    // Groups that cost a landing (tall, double) add GAP_RECOVERY px on top:
+    // the player touches down later and needs that much runway to re-set.
+    function nextGap(speed, r, hard) {
+      return speed * 1.05 + (hard ? GAP_RECOVERY : 0) + r * (120 + speed * 0.45);
     }
 
     function pickKind(prog) {
@@ -90,6 +119,8 @@ var PocketCore=(function(){var module={exports:{}};
       if (prog > 0.25 && roll < 0.16) return 'tall';
       if (prog > 0.4 && roll < 0.28) return 'double';
       if (prog > 0.15 && roll < 0.46) return 'wide';
+      // crate heads past SPRING_PROG may be spring crates (bounce on top hit)
+      if (prog > SPRING_PROG && rng() < SPRING_CHANCE) return 'spring';
       return 'crate';
     }
 
@@ -99,7 +130,7 @@ var PocketCore=(function(){var module={exports:{}};
       var o;
       if (kind === 'tall') o = mkObst(38, 78, g._nextObstX, 'tall');
       else if (kind === 'wide') o = mkObst(80, 44, g._nextObstX, 'wide');
-      else o = mkObst(42, 46, g._nextObstX, 'crate');
+      else o = mkObst(42, 46, g._nextObstX, kind === 'spring' ? 'spring' : 'crate');
       g.obstacles.push(o);
       g.events.push(['spawn-ob', o.kind, o.x, o.y]);
       var lastRight = o.x + o.w;
@@ -109,15 +140,45 @@ var PocketCore=(function(){var module={exports:{}};
         g.events.push(['spawn-ob', 'crate', o2.x, o2.y]);
         lastRight = o2.x + o2.w;
       }
-      // snack arc in the gap after the group (always clears the next group:
-      // arcs end <= lastRight+180, gaps are >= 372px at min speed)
+      // snack trail along a real single-jump arc through the gap: points sit
+      // on the (v*t, JUMP_V*t - G*t^2/2) parabola at the spawn speed, so a
+      // player following that jump collects them; never reaches the next group
+      var gapEnd = lastRight + nextGap(g.speed, rng(), kind === 'tall' || kind === 'double');
       if (rng() < 0.6) {
-        var baseX = lastRight + 60 + rng() * 60;
-        var hy = GROUND_Y - 55 - rng() * 85;
+        var v = g.speed;
+        var flight = 2 * JUMP_V / GRAVITY;               // single-jump flight time
+        var n = 3 + Math.floor(rng() * 3);               // 3..5 snacks
+        var t0 = 0.12 + rng() * 0.08;                    // skip liftoff frames
+        var step = (flight * 0.86 - t0) / (n - 1);       // end before touchdown
+        var startX = lastRight + 30 + rng() * 40;
         var pk = KINDS[Math.floor(rng() * KINDS.length) % KINDS.length];
-        for (var i = 0; i < 3; i++) g.pickups.push({ x: baseX + i * 30, y: hy, r: 12, kind: pk });
+        for (var i = 0; i < n; i++) {
+          var tt = t0 + i * step;
+          var sx = startX + v * tt;
+          if (sx > gapEnd - 50) break;
+          var h = JUMP_V * tt - 0.5 * GRAVITY * tt * tt; // feet height on that arc
+          g.pickups.push({ x: sx, y: GROUND_Y - h, r: 12, kind: pk });
+        }
+        // rare golden donut riding slightly above the trail apex
+        if (rng() < GOLDEN_CHANCE) {
+          var gx = startX + v * (flight / 2);
+          if (gx <= gapEnd - 50) {
+            var apexH = JUMP_V * JUMP_V / (2 * GRAVITY);
+            g.pickups.push({ x: gx, y: GROUND_Y - apexH - 15, r: 12, kind: 'golden' });
+          }
+        }
       }
-      g._nextObstX = lastRight + nextGap(g.speed, rng());
+      // rare shield/magnet in mid-gap: never in the opening, cooldown-gated
+      if (g.x >= SPECIAL_MIN_X && g.time >= g._nextSpecialAt) {
+        var sr = rng();
+        if (sr < SHIELD_CHANCE + MAGNET_CHANCE) {
+          var kindp = sr < SHIELD_CHANCE ? 'shield' : 'magnet';
+          var mh = 55 + rng() * 60;                    // jump-reachable height
+          g.pickups.push({ x: (lastRight + gapEnd) / 2, y: GROUND_Y - mh, r: 12, kind: kindp });
+          g._nextSpecialAt = g.time + POWERUP_COOLDOWN;
+        }
+      }
+      g._nextObstX = gapEnd;
     }
 
     function jump() {
@@ -167,9 +228,25 @@ var PocketCore=(function(){var module={exports:{}};
           it = g.obstacles[i];
           if (it.hit) continue;
           if (pr > it.x + 3 && pl < it.x + it.w - 3 && pb > it.y + 3 && pt < it.y + it.h) {
+            // spring crates bounce on TOP hits only (was above the top last
+            // frame while falling); side/bottom hits still crash
+            if (it.kind === 'spring' && p.vy > 0 && (pb - p.vy * dt) <= it.y + 12) {
+              it.hit = true;
+              p.vy = -SPRING_V;
+              p.jumps = 1;            // air jump available again after the bounce
+              g.events.push(['spring', it.x - g.x, it.y]);
+              break;
+            }
             it.hit = true;
+            if (g.shield) {           // shield eats the crash: no heart, no iframes
+              g.shield = false;
+              g.chain = 0; g.chainMult = 1;
+              g.events.push(['shield-used', it.x - g.x, it.y]);
+              break;
+            }
             g.hits++;
             g.hearts--;
+            g.chain = 0; g.chainMult = 1;   // a crash breaks the snack chain
             g.iframes = IFRAMES;
             g.events.push(['hit', it.x - g.x, it.y]);
             if (g.hearts <= 0) {
@@ -182,16 +259,43 @@ var PocketCore=(function(){var module={exports:{}};
           }
         }
       }
+      // magnet: pull nearby pickups toward the player while active
+      if (g.magnetT > 0) {
+        g.magnetT = Math.max(0, g.magnetT - dt);
+        var mx = g.x + p.x, my = p.y - p.h / 2;
+        for (i = 0; i < g.pickups.length; i++) {
+          var mp = g.pickups[i];
+          var mdx = mx - mp.x, mdy = my - mp.y;
+          var md = Math.sqrt(mdx * mdx + mdy * mdy);
+          if (md < MAGNET_RADIUS && md > 1) {
+            var pull = Math.min(MAGNET_PULL * dt, md);
+            mp.x += mdx / md * pull;
+            mp.y += mdy / md * pull;
+          }
+        }
+      }
       for (i = g.pickups.length - 1; i >= 0; i--) {
         var pk = g.pickups[i];
         if (pr > pk.x - 10 && pl < pk.x + 10 && pb > pk.y - 10 && pt < pk.y + 10) {
           g.pickups.splice(i, 1);
           g.pickupsGot++;
-          g.events.push(['pickup', pk.kind, pk.x - g.x, pk.y]);
+          if (pk.kind === 'shield') {
+            g.shield = true;
+            g.events.push(['pickup', 'shield', pk.x - g.x, pk.y, 1]);
+          } else if (pk.kind === 'magnet') {
+            g.magnetT = MAGNET_TIME;
+            g.events.push(['pickup', 'magnet', pk.x - g.x, pk.y, 1]);
+          } else {
+            g.chain++;
+            if (g.chain > g.bestChain) g.bestChain = g.chain;
+            g.chainMult = chainMultFor(g.chain);
+            g.pickupScore += (pk.kind === 'golden' ? PICKUP_PTS * GOLDEN_MULT : PICKUP_PTS) * g.chainMult;
+            g.events.push(['pickup', pk.kind, pk.x - g.x, pk.y, g.chainMult]);
+          }
         }
       }
 
-      g.score = Math.floor(g.x * SCORE_PER_PX) + g.pickupsGot * PICKUP_PTS;
+      g.score = Math.floor(g.x * SCORE_PER_PX) + g.pickupScore;
       return g;
     }
 
@@ -201,6 +305,8 @@ var PocketCore=(function(){var module={exports:{}};
       g.time = 0; g.x = 0; g.meters = 0;
       g.speed = SPEED_BASE; g.iframes = 0;
       g.pickupsGot = 0; g.hits = 0; g.jumpsUsed = 0;
+      g.chain = 0; g.bestChain = 0; g.chainMult = 1; g.pickupScore = 0;
+      g.shield = false; g.magnetT = 0; g._nextSpecialAt = 0;
       g.player.x = PLAYER_X; g.player.y = GROUND_Y;
       g.player.vy = 0; g.player.onGround = true; g.player.jumps = 0;
       g.obstacles.length = 0;
@@ -237,7 +343,10 @@ var PocketCore=(function(){var module={exports:{}};
       JUMP_V: JUMP_V, JUMP2_V: JUMP2_V,
       SPEED_BASE: SPEED_BASE, SPEED_MAX: SPEED_MAX, SPEED_GAIN: SPEED_GAIN,
       PLAYER_X: PLAYER_X,
-      IFRAMES: IFRAMES, PICKUP_PTS: PICKUP_PTS, FIRST_OBST_AT: FIRST_OBST_AT
+      IFRAMES: IFRAMES, PICKUP_PTS: PICKUP_PTS, FIRST_OBST_AT: FIRST_OBST_AT,
+      GAP_RECOVERY: GAP_RECOVERY, CHAIN_TIER2: CHAIN_TIER2, CHAIN_TIER3: CHAIN_TIER3,
+      GOLDEN_MULT: GOLDEN_MULT, MAGNET_TIME: MAGNET_TIME, MAGNET_RADIUS: MAGNET_RADIUS,
+      SPRING_V: SPRING_V, POWERUP_COOLDOWN: POWERUP_COOLDOWN
     };
     return g;
   }
@@ -246,6 +355,7 @@ var PocketCore=(function(){var module={exports:{}};
     createGame: createGame,
     mulberry32: mulberry32,
     clamp: clamp,
+    chainMultFor: chainMultFor,
     VERSION: '1.0.0'
   };
 });
