@@ -327,3 +327,82 @@ test('no impossible sandwich: tall/double groups leave landing-recovery gap', ()
   assert.ok(checked > 25, 'fixture must see real group sequences, got ' + checked);
   assert.ok(hardGroups > 4, 'fixture must see tall/double groups, got ' + hardGroups);
 });
+
+test('chain multiplier tiers: x1 below 5, x2 at 5-9, x3 at 10+', () => {
+  const m = PocketGame.chainMultFor;
+  assert.equal(m(0), 1); assert.equal(m(1), 1); assert.equal(m(4), 1);
+  assert.equal(m(5), 2); assert.equal(m(7), 2); assert.equal(m(9), 2);
+  assert.equal(m(10), 3); assert.equal(m(25), 3);
+});
+
+test('chain scoring in play: tiers apply, crash resets the chain', () => {
+  const g = PocketGame.createGame({ rng: () => 0.5 });
+  g.start();
+  // five pickups in a row: 4 at x1 then the 5th at x2 (chain tier edge)
+  const groundY = g.CONST.GROUND_Y;
+  for (let i = 0; i < 5; i++) {
+    g.pickups.push({ x: g.x + g.player.x, y: groundY - 20, r: 12, kind: 'cookie' });
+    const before = g.pickupScore;
+    g.update(16);
+    assert.equal(g.pickupScore - before, g.CONST.PICKUP_PTS * (i >= 4 ? 2 : 1),
+      'pickup ' + (i + 1) + ' scores at ' + (i >= 4 ? 'x2' : 'x1'));
+  }
+  assert.equal(g.chain, 5);
+  assert.equal(g.chainMult, 2);
+  assert.equal(g.bestChain, 5);
+  // crash resets the chain; the next pickup scores x1 again
+  g.iframes = 0;
+  g.obstacles.push({ x: g.x + g.player.x - 10, y: groundY - 46, w: 42, h: 46, kind: 'crate', hit: false });
+  g.update(16);
+  assert.equal(g.chain, 0);
+  assert.equal(g.chainMult, 1);
+  assert.equal(g.bestChain, 5, 'bestChain survives the crash');
+  g.pickups.push({ x: g.x + g.player.x, y: groundY - 20, r: 12, kind: 'cookie' });
+  const before = g.pickupScore;
+  g.update(16);
+  assert.equal(g.pickupScore - before, g.CONST.PICKUP_PTS, 'post-crash pickup back to x1');
+});
+
+test('snack trails sit on the jump arc inside the gap (reachable)', () => {
+  // Reachability envelope: a trail point is reachable iff its height above
+  // ground is within the single-jump apex (jump can start anywhere before it)
+  // and it stays clear of both the group behind and the group ahead.
+  const C = PocketGame.createGame({ rng: mulberry32(11) }).CONST;
+  const apex = C.JUMP_V * C.JUMP_V / (2 * C.GRAVITY);
+  const WIDTH = { tall: 38, wide: 80, crate: 42 };
+  const g = PocketGame.createGame({ rng: mulberry32(11) });
+  g.start();
+  g.hearts = 1e9;
+  let maxSeenX = -Infinity, groups = [], batch = [];
+  let trails = 0, points = 0;
+  for (let t = 0; t < 120000 && g.state !== 'over'; t += 16) {
+    g.update(16);
+    for (const e of g.takeEvents()) {
+      if (e[0] === 'spawn-ob') batch.push({ kind: e[1], x: e[2] });
+    }
+    if (batch.length) {
+      const last = batch[batch.length - 1];
+      groups.push({ left: batch[0].x, right: last.x + WIDTH[last.kind] });
+      batch = [];
+    }
+    for (const p of g.pickups) {
+      if (p.x <= maxSeenX) continue;
+      maxSeenX = p.x;
+      // find the group behind (last group whose right edge is left of p.x)
+      let behind = null, ahead = null;
+      for (const grp of groups) {
+        if (grp.right <= p.x) behind = grp;
+        else if (!ahead || grp.left < ahead.left) ahead = grp;
+      }
+      if (!behind) continue; // starter pickups, none expected
+      trails++; points++;
+      const h = C.GROUND_Y - p.y;
+      assert.ok(h >= 15 && h <= apex + 1e-6,
+        'trail height ' + h.toFixed(0) + 'px outside jump envelope (apex ' + apex.toFixed(0) + ')');
+      assert.ok(p.x >= behind.right + 20, 'trail starts inside the group behind');
+      if (ahead) assert.ok(p.x <= ahead.left - 40,
+        'trail point ' + (p.x - behind.right).toFixed(0) + 'px past group intrudes on next group');
+    }
+  }
+  assert.ok(points > 20, 'fixture must see real trail points, got ' + points);
+});

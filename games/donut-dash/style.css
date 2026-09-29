@@ -116,6 +116,25 @@ body {
 }
 .chip-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--dim); }
 .chip-value { font-size: 18px; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+
+/* S3 chain multiplier: pinned to the score chip's corner so the HUD row
+   never re-wraps when it appears; hidden attribute toggles it. */
+.chip { position: relative; }
+.chain-badge {
+  position: absolute;
+  top: -8px;
+  right: -6px;
+  background: linear-gradient(180deg, var(--accent-light, #ffc0ad), var(--accent));
+  color: #35160c;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  padding: 3px 7px;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  box-shadow: 0 4px 12px rgba(255, 154, 128, 0.35);
+}
+.chain-badge[hidden] { display: none; }
 .chip.hearts { justify-content: center; font-size: 16px; letter-spacing: 3px; color: var(--danger); min-height: 48px; text-shadow: 0 0 12px rgba(255, 107, 107, 0.35); }
 
 .stage {

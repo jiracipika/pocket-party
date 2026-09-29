@@ -46,6 +46,7 @@
     startBest: document.getElementById('startBest'),
     dist: document.getElementById('hudDist'),
     hearts: document.getElementById('hudHearts'),
+    chain: document.getElementById('hudChain'),
     ovStart: document.getElementById('ovStart'),
     ovPause: document.getElementById('ovPause'),
     ovOver: document.getElementById('ovOver'),
@@ -61,6 +62,7 @@
     recapPickups: document.getElementById('recapPickups'),
     recapHits: document.getElementById('recapHits'),
     recapJumps: document.getElementById('recapJumps'),
+    recapChain: document.getElementById('recapChain'),
     recapBest: document.getElementById('recapBest'),
     srStatus: document.getElementById('srStatus')
   };
@@ -394,6 +396,8 @@
     el.best.textContent = String(game.best);
     el.dist.textContent = game.meters + 'm';
     el.hearts.textContent = fmtHearts(game.hearts);
+    el.chain.hidden = game.chainMult <= 1;
+    el.chain.textContent = 'x' + game.chainMult;
   }
   function show(ov, on) { ov.classList.toggle('hidden', !on); }
   function announce(msg) { el.srStatus.textContent = msg; }
@@ -412,7 +416,7 @@
       }
       else if (e[0] === 'pickup') {
         sfx.pickup();
-        burst(e[2], e[3], SNACK_COLORS[e[1]] || ACCENT, 8);
+        burst(e[2], e[3], SNACK_COLORS[e[1]] || ACCENT, e[4] >= 3 ? 14 : (e[4] >= 2 ? 10 : 8));
         burst(e[2], e[3], '#ffffff', 4, 150); // white sparkle over the snack burst
       }
       else if (e[0] === 'hit') { sfx.hit(); burst(e[2], e[3] + 20, DANGER, 16, 130); shakeT = 0.18; flashT = HIT_FLASH_T; }
@@ -429,6 +433,7 @@
     el.recapPickups.textContent = String(game.pickupsGot);
     el.recapHits.textContent = String(game.hits);
     el.recapJumps.textContent = String(game.jumpsUsed);
+    el.recapChain.textContent = 'x' + game.bestChain;
     el.recapBest.textContent = newBest && game.score > 0 ? 'Yes!' : 'No';
     el.recapBest.classList.toggle('is-new-best', newBest && game.score > 0);
     show(el.ovOver, true);
@@ -617,7 +622,8 @@
           speed: game.speed, jumpsUsed: game.jumpsUsed,
           onGround: game.player.onGround, playerY: game.player.y,
           obstacles: game.obstacles.length, pickups: game.pickups.length,
-          pickupsGot: game.pickupsGot, hits: game.hits, iframes: game.iframes
+          pickupsGot: game.pickupsGot, hits: game.hits, iframes: game.iframes,
+          chain: game.chain, bestChain: game.bestChain, chainMult: game.chainMult
         };
       },
       start: startRound,

@@ -20,7 +20,7 @@
   <p class="tagline">An endless run &mdash; jump the crates, grab the snacks!</p>
 
   <section class="hud" aria-live="off">
-    <div class="chip"><span class="chip-label">Score</span><span id="hudScore" class="chip-value">0</span></div>
+    <div class="chip"><span class="chip-label">Score</span><span id="hudScore" class="chip-value">0</span><span id="hudChain" class="chain-badge" hidden>&times;2</span></div>
     <div class="chip"><span class="chip-label">Best</span><span id="hudBest" class="chip-value">0</span></div>
     <div class="chip"><span class="chip-label">Distance</span><span id="hudDist" class="chip-value">0m</span></div>
     <div class="chip hearts" id="hudHearts" aria-label="Hearts">&#9829;&#9829;&#9829;</div>
@@ -56,6 +56,7 @@
           <ul class="recap-list">
             <li><span>Distance</span><b id="recapDistance">0m</b></li>
             <li><span>Snacks grabbed</span><b id="recapPickups">0</b></li>
+            <li><span>Best chain</span><b id="recapChain">&times;0</b></li>
             <li><span>Crashes</span><b id="recapHits">0</b></li>
             <li><span>Jumps</span><b id="recapJumps">0</b></li>
             <li><span>New best?</span><b id="recapBest">No</b></li>

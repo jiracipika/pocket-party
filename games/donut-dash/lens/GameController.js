@@ -34,6 +34,8 @@ var PocketCore=(function(){var module={exports:{}};
 
   var IFRAMES = 1.2;             // seconds of mercy invulnerability after a hit
   var PICKUP_PTS = 25;
+  var CHAIN_TIER2 = 5;           // consecutive pickups for x2
+  var CHAIN_TIER3 = 10;          // consecutive pickups for x3
   var SCORE_PER_PX = 1 / 12;     // distance -> score
   var PX_PER_M = 32;             // distance readout
 
@@ -54,6 +56,11 @@ var PocketCore=(function(){var module={exports:{}};
 
   function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
+  // Snack-chain reward tier for a run of consecutive pickups (crash resets).
+  function chainMultFor(chain) {
+    return chain >= CHAIN_TIER3 ? 3 : chain >= CHAIN_TIER2 ? 2 : 1;
+  }
+
   function createGame(opts) {
     opts = opts || {};
     var rng = opts.rng || function () { return 0.5; };
@@ -68,6 +75,8 @@ var PocketCore=(function(){var module={exports:{}};
       speed: SPEED_BASE,
       iframes: 0,
       pickupsGot: 0, hits: 0, jumpsUsed: 0,
+      chain: 0, bestChain: 0, chainMult: 1,  // consecutive pickups, crash resets
+      pickupScore: 0,                        // snack points with chain multipliers
       player: { x: PLAYER_X, y: GROUND_Y, w: PLAYER_W, h: PLAYER_H, vy: 0, onGround: true, jumps: 0 },
       obstacles: [],             // world-space: {x (left), y (top), w, h, kind, hit}
       pickups: [],               // world-space: {x (center), y (center), r, kind}
@@ -112,15 +121,27 @@ var PocketCore=(function(){var module={exports:{}};
         g.events.push(['spawn-ob', 'crate', o2.x, o2.y]);
         lastRight = o2.x + o2.w;
       }
-      // snack arc in the gap after the group (always clears the next group:
-      // arcs end <= lastRight+180, gaps are >= 372px at min speed)
+      // snack trail along a real single-jump arc through the gap: points sit
+      // on the (v*t, JUMP_V*t - G*t^2/2) parabola at the spawn speed, so a
+      // player following that jump collects them; never reaches the next group
+      var gapEnd = lastRight + nextGap(g.speed, rng(), kind === 'tall' || kind === 'double');
       if (rng() < 0.6) {
-        var baseX = lastRight + 60 + rng() * 60;
-        var hy = GROUND_Y - 55 - rng() * 85;
+        var v = g.speed;
+        var flight = 2 * JUMP_V / GRAVITY;               // single-jump flight time
+        var n = 3 + Math.floor(rng() * 3);               // 3..5 snacks
+        var t0 = 0.12 + rng() * 0.08;                    // skip liftoff frames
+        var step = (flight * 0.86 - t0) / (n - 1);       // end before touchdown
+        var startX = lastRight + 30 + rng() * 40;
         var pk = KINDS[Math.floor(rng() * KINDS.length) % KINDS.length];
-        for (var i = 0; i < 3; i++) g.pickups.push({ x: baseX + i * 30, y: hy, r: 12, kind: pk });
+        for (var i = 0; i < n; i++) {
+          var tt = t0 + i * step;
+          var sx = startX + v * tt;
+          if (sx > gapEnd - 50) break;
+          var h = JUMP_V * tt - 0.5 * GRAVITY * tt * tt; // feet height on that arc
+          g.pickups.push({ x: sx, y: GROUND_Y - h, r: 12, kind: pk });
+        }
       }
-      g._nextObstX = lastRight + nextGap(g.speed, rng(), kind === 'tall' || kind === 'double');
+      g._nextObstX = gapEnd;
     }
 
     function jump() {
@@ -173,6 +194,7 @@ var PocketCore=(function(){var module={exports:{}};
             it.hit = true;
             g.hits++;
             g.hearts--;
+            g.chain = 0; g.chainMult = 1;   // a crash breaks the snack chain
             g.iframes = IFRAMES;
             g.events.push(['hit', it.x - g.x, it.y]);
             if (g.hearts <= 0) {
@@ -190,11 +212,15 @@ var PocketCore=(function(){var module={exports:{}};
         if (pr > pk.x - 10 && pl < pk.x + 10 && pb > pk.y - 10 && pt < pk.y + 10) {
           g.pickups.splice(i, 1);
           g.pickupsGot++;
-          g.events.push(['pickup', pk.kind, pk.x - g.x, pk.y]);
+          g.chain++;
+          if (g.chain > g.bestChain) g.bestChain = g.chain;
+          g.chainMult = chainMultFor(g.chain);
+          g.pickupScore += PICKUP_PTS * g.chainMult;
+          g.events.push(['pickup', pk.kind, pk.x - g.x, pk.y, g.chainMult]);
         }
       }
 
-      g.score = Math.floor(g.x * SCORE_PER_PX) + g.pickupsGot * PICKUP_PTS;
+      g.score = Math.floor(g.x * SCORE_PER_PX) + g.pickupScore;
       return g;
     }
 
@@ -204,6 +230,7 @@ var PocketCore=(function(){var module={exports:{}};
       g.time = 0; g.x = 0; g.meters = 0;
       g.speed = SPEED_BASE; g.iframes = 0;
       g.pickupsGot = 0; g.hits = 0; g.jumpsUsed = 0;
+      g.chain = 0; g.bestChain = 0; g.chainMult = 1; g.pickupScore = 0;
       g.player.x = PLAYER_X; g.player.y = GROUND_Y;
       g.player.vy = 0; g.player.onGround = true; g.player.jumps = 0;
       g.obstacles.length = 0;
@@ -241,7 +268,7 @@ var PocketCore=(function(){var module={exports:{}};
       SPEED_BASE: SPEED_BASE, SPEED_MAX: SPEED_MAX, SPEED_GAIN: SPEED_GAIN,
       PLAYER_X: PLAYER_X,
       IFRAMES: IFRAMES, PICKUP_PTS: PICKUP_PTS, FIRST_OBST_AT: FIRST_OBST_AT,
-      GAP_RECOVERY: GAP_RECOVERY
+      GAP_RECOVERY: GAP_RECOVERY, CHAIN_TIER2: CHAIN_TIER2, CHAIN_TIER3: CHAIN_TIER3
     };
     return g;
   }
@@ -250,6 +277,7 @@ var PocketCore=(function(){var module={exports:{}};
     createGame: createGame,
     mulberry32: mulberry32,
     clamp: clamp,
+    chainMultFor: chainMultFor,
     VERSION: '1.0.0'
   };
 });
