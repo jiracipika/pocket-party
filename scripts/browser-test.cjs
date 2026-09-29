@@ -11,11 +11,11 @@ const base=process.env.BASE_URL||'http://127.0.0.1:4173';
  const phase=s=>s.state||s.phase;
  const timer=s=>s.roundTimeLeft??s.timeLeft??s.time;
  async function pageFor(slug,width=390,height=844){const p=await browser.newPage({viewport:{width,height},hasTouch:true,isMobile:true,deviceScaleFactor:2});p.setDefaultTimeout(5000);p.on('pageerror',e=>report.errors.push(slug+': '+e.message));p.on('response',r=>{if(r.status()>=400)report.errors.push(slug+': HTTP '+r.status()+' '+r.url())});await p.goto(base+'/games/'+slug+'/?qa=1');await p.waitForFunction(()=>!!window.__gameTest);return p;}
- const games=[['snack-catch','#btnStart','#btnPause','#btnResume','#btnReplay','#btnMute'],['donut-dash','#btnStart','#btnPause','#btnResume','#btnReplay','#btnMute'],['stack-rush','#btn-start','#btn-pause','#btn-resume','#btn-replay','#btn-sound'],['color-panic','#startBtn','#pauseBtn','#resumeBtn','#replayBtn','#muteBtn']];
+ const games=[['snack-catch','#btnStart','#btnPause','#btnResume','#btnReplay','#btnMute'],['donut-dash','#btnStart','#btnPause','#btnResume','#btnReplay','#btnMute'],['balloon-bank','#btnStart','#btnPause','#btnResume','#btnReplay','#btnMute'],['stack-rush','#btn-start','#btn-pause','#btn-resume','#btn-replay','#btn-sound'],['color-panic','#startBtn','#pauseBtn','#resumeBtn','#replayBtn','#muteBtn']];
  try{
  for(const size of [{width:360,height:640},{width:390,height:844},{width:768,height:1024},{width:1280,height:720}]){
   const p=await browser.newPage({viewport:size});await p.goto(base);
-  await check('landing responsive '+size.width,async()=>{assert.equal(await p.locator('.game').count(),4);assert.ok(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));for(const game of await p.locator('.game').all()){const b=await game.boundingBox();assert.ok(b.width>44&&b.x>=0&&b.x+b.width<=size.width+1)}});
+  await check('landing responsive '+size.width,async()=>{assert.equal(await p.locator('.game').count(),5);assert.ok(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));for(const game of await p.locator('.game').all()){const b=await game.boundingBox();assert.ok(b.width>44&&b.x>=0&&b.x+b.width<=size.width+1)}});
   await p.screenshot({path:'artifacts/landing-'+size.width+'.png',fullPage:true});await p.close();
  }
  await check('share fallback is honest',async()=>{const p=await browser.newPage();await p.addInitScript(()=>{Object.defineProperty(navigator,'share',{value:undefined});Object.defineProperty(navigator,'clipboard',{value:undefined})});await p.goto(base);await p.locator('#share-party').click();assert.match(await p.locator('#share-status').innerText(),/Copy this link:/);await p.close()});
@@ -33,6 +33,22 @@ const base=process.env.BASE_URL||'http://127.0.0.1:4173';
    await check('Stack Rush touch/keyboard score, failure and replay',async()=>{await p.evaluate(()=>document.activeElement.blur());await p.keyboard.press('Space');assert.ok((await state(p)).score>=1);const c=await p.locator('canvas').boundingBox();for(let i=0;i<25&&phase(await state(p))==='playing';i++){await p.touchscreen.tap(c.x+c.width/2,c.y+c.height/2);await p.clock.runFor(25)}assert.equal(phase(await state(p)),'over');await p.clock.runFor(800);assert.ok(await p.locator(replay).isVisible());await p.screenshot({path:'artifacts/'+slug+'-over.png'});await p.locator(replay).tap();assert.equal((await state(p)).score,0);assert.equal(phase(await state(p)),'playing')});
   }else if(slug==='donut-dash'){
    await check('Donut Dash jump input, crash game over and replay',async()=>{await p.evaluate(()=>document.activeElement.blur());const s0=await state(p);assert.equal(s0.hearts,3);await p.keyboard.press('Space');assert.ok((await state(p)).jumpsUsed>=1,'space jumps');await p.clock.runFor(700);assert.ok((await state(p)).onGround,'lands again');for(let i=0;i<80&&phase(await state(p))==='playing';i++)await p.clock.runFor(500);assert.equal(phase(await state(p)),'over','three crashes end the run');assert.ok((await state(p)).score>0,'distance scored');assert.ok(await p.locator(replay).isVisible());await p.screenshot({path:'artifacts/'+slug+'-over.png'});await p.locator(replay).tap();assert.equal((await state(p)).score,0);assert.equal(phase(await state(p)),'playing')});
+  }else if(slug==='balloon-bank'){
+   await check('Balloon Bank hold-bank scores, over-pump pops, replay resets',async()=>{
+    await p.evaluate(()=>window.__gameTest.hold(true));
+    await p.clock.runFor(300); // 300ms -> radius ~43.5 < the 67.5 minimum threshold: pop impossible pre-bank
+    const banked=await p.evaluate(()=>{const t=window.__gameTest;t.hold(false);const g=t.game;const pts=g.bank();return {pts,score:g.score,banks:g.banks,radius:Math.round(g.radius)}});
+    assert.ok(banked.pts>0,'a held bank pays points');
+    assert.equal(banked.score,banked.pts,'score equals the bank payout');
+    // drive the core directly: hold until the hidden threshold bursts it
+    const popped=await p.evaluate(()=>{const g=window.__gameTest.game;const h0=g.hearts;window.__gameTest.hold(true);for(let i=0;i<800&&g.pops===0;i++)g.update(16);window.__gameTest.hold(false);return {pops:g.pops,hearts:g.hearts,h0}});
+    assert.ok(popped.pops>=1,'over-pumping pops the balloon');
+    assert.equal(popped.hearts,popped.h0-1,'a pop costs one heart');
+    await p.evaluate(()=>window.__gameTest.forceOver());
+    assert.equal(phase(await state(p)),'over');
+    assert.ok(await p.locator(replay).isVisible());await p.screenshot({path:'artifacts/'+slug+'-over.png'});
+    await p.locator(replay).tap();assert.equal((await state(p)).score,0);assert.equal(phase(await state(p)),'playing');
+   });
   }else{
    await check('Color Panic touch hitbox, keyboard and timer game over',async()=>{let s=await state(p);const c=await p.locator('canvas').boundingBox();const slot=s.targetIndex;const pad=14,bw=(c.width-pad*3)/2,bh=(c.height*.42-pad*2)/2;const x=c.x+pad+(slot%2)*(bw+pad)+bw/2;const y=c.y+c.height-pad-bh/2-(slot>=2?bh+pad:0);await p.touchscreen.tap(x,y);assert.ok((await state(p)).score>0);await p.clock.runFor(220);s=await state(p);const before=s.score;await p.keyboard.press(String(s.targetIndex+1));assert.ok((await state(p)).score>before);await p.clock.runFor(9000);assert.equal(phase(await state(p)),'over');assert.ok(await p.locator(replay).isVisible(),'timer expiry must show recap');await p.screenshot({path:'artifacts/'+slug+'-over.png'});await p.locator(replay).tap();assert.equal((await state(p)).score,0);assert.equal(phase(await state(p)),'playing')});
   }

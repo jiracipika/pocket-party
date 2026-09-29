@@ -1,7 +1,8 @@
 # Balloon Bank — product brief (added 2026-09-27)
 
-The fifth Pocket Party game. Status: **designed, not yet built** — Slice S1 in
-`docs/slices/balloon-bank.md` creates the folder. This brief is the durable
+The fifth Pocket Party game. Status: **browser playable (S1+S2+S3 complete,
+2026-09-29)** — core, browser game and landing integration are live; S4+ per
+`docs/slices/balloon-bank.md`. This brief is the durable
 spec; the slice plan is the delivery schedule. (Donut Dash joined as the
 fourth game via commit `2b4626a` — see `docs/brief-donut-dash.md`.)
 
