@@ -65,6 +65,10 @@
     recapHits: document.getElementById('recapHits'),
     recapJumps: document.getElementById('recapJumps'),
     recapChain: document.getElementById('recapChain'),
+    recapDelta: document.getElementById('recapDelta'),
+    recapChart: document.getElementById('recapChart'),
+    missionList: document.getElementById('missionList'),
+    btnDaily: document.getElementById('btnDaily'),
     recapBest: document.getElementById('recapBest'),
     srStatus: document.getElementById('srStatus')
   };
@@ -80,6 +84,66 @@
   }
   function saveBest(n) {
     try { window.localStorage.setItem(bestKey, String(n)); } catch (e) { /* private mode */ }
+  }
+
+  // ---------- S5 meta: daily seed, history ring, missions (all local) ----------
+  var META = window.DonutMeta;
+  function dateStamp() {
+    var d = new Date();
+    return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+  }
+  function loadJSON(key, fallback) {
+    try {
+      var v = window.localStorage.getItem(key);
+      if (v === null) return fallback;
+      var parsed = JSON.parse(v);
+      return parsed === null || parsed === undefined ? fallback : parsed;
+    } catch (e) { return fallback; }
+  }
+  function saveJSON(key, value) {
+    try { window.localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* private mode */ }
+  }
+  var bestMKey = 'donut-dash-best-m';
+  var historyKey = 'donut-dash-history';
+  var missionsKey = 'donut-dash-missions';
+  var bestM = loadJSON(bestMKey, 0);
+  if (typeof bestM !== 'number' || !isFinite(bestM) || bestM < 0) bestM = 0;
+  var history = loadJSON(historyKey, []);
+  var missionsDone = loadJSON(missionsKey, {});
+  function renderMissions() {
+    var html = '';
+    for (var i = 0; i < META.MISSIONS.length; i++) {
+      var m = META.MISSIONS[i];
+      var done = !!missionsDone[m.id];
+      html += '<li class="' + (done ? 'done' : 'open') + '"><span class="mission-mark">' +
+        (done ? '\u2713' : '\u25CB') + '</span>' + m.label + '</li>';
+    }
+    el.missionList.innerHTML = html;
+  }
+  function renderChart() {
+    var days = [];
+    for (var i = 6; i >= 0; i--) {
+      var d = new Date(); d.setDate(d.getDate() - i);
+      days.push(d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2));
+    }
+    var byDay = {};
+    for (var j = 0; j < history.length; j++) byDay[history[j].d] = history[j].m;
+    var vals = [];
+    for (var k = 0; k < days.length; k++) vals.push(byDay[days[k]] || 0);
+    var max = 1;
+    for (var k2 = 0; k2 < vals.length; k2++) if (vals[k2] > max) max = vals[k2];
+    var WD = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+    var bars = '';
+    for (var b = 0; b < 7; b++) {
+      var x = b * 20 + 5;
+      var hgt = vals[b] > 0 ? Math.max(4, Math.round(vals[b] / max * 34)) : 3;
+      var y = 40 - hgt;
+      bars += '<rect x="' + x + '" y="' + y + '" width="12" height="' + hgt + '" rx="2" fill="' +
+        (vals[b] > 0 ? 'var(--accent)' : 'rgba(255,255,255,0.14)') + '"/>';
+      var wd = new Date(days[b] + 'T12:00:00').getDay();
+      bars += '<text x="' + (x + 6) + '" y="50" text-anchor="middle" font-size="8" fill="rgba(255,255,255,0.5)">' + WD[wd] + '</text>';
+    }
+    el.recapChart.innerHTML = '<svg viewBox="0 0 150 54" width="150" height="54" role="img" aria-label="Best distance, last 7 days">' + bars + '</svg>';
   }
 
   // ---------- audio (procedural, short) ----------
@@ -210,6 +274,31 @@
 
   // Deterministic backdrop sprinkle positions (no Math.random: stable frames)
   function sprinkle(i, w) { return ((i * 137.5) % (w + 40)) - 20; }
+
+  // S5: personal-best distance ghost flag, rendered in-world until passed
+  function drawGhostFlag() {
+    if (!bestM || game.meters >= bestM) return;
+    var sx = bestM * 32 - game.x;
+    if (sx < -30 || sx > CANVAS_W + 30) return;
+    var topY = GROUND_Y - 58;
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(sx, GROUND_Y);
+    ctx.lineTo(sx, topY);
+    ctx.stroke();
+    ctx.fillStyle = ACCENT;
+    ctx.beginPath();
+    ctx.moveTo(sx, topY);
+    ctx.lineTo(sx + 22, topY + 7);
+    ctx.lineTo(sx, topY + 14);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    ctx.font = '700 9px "Avenir Next", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('PB ' + bestM + 'm', sx, topY - 6);
+  }
 
   function drawBackdrop() {
     // opaque night sky + cached ink-grain stipple
@@ -396,6 +485,7 @@
     ctx.save();
     ctx.translate(shakeX, shakeY);
     drawBackdrop();
+    drawGhostFlag();
     for (var i = 0; i < game.pickups.length; i++) drawPickup(game.pickups[i]);
     for (var j = 0; j < game.obstacles.length; j++) drawObstacle(game.obstacles[j]);
     drawPlayer();
@@ -473,12 +563,32 @@
   function endRound() {
     var newBest = game.score > game.best;
     if (newBest) { game.best = game.score; saveBest(game.best); }
+    // S5 meta: best-distance delta, 7-day history, missions (local only)
+    var prevBestM = bestM;
+    if (game.meters > bestM) { bestM = game.meters; saveJSON(bestMKey, bestM); }
+    history = META.pushHistory(history, dateStamp(), game.meters);
+    saveJSON(historyKey, history);
+    var run = { meters: game.meters, hits: game.hits, bestChain: game.bestChain, dayKey: dateStamp() };
+    missionsDone = META.evaluateMissions(missionsDone, run);
+    saveJSON(missionsKey, missionsDone);
+    renderMissions();
     el.finalScore.textContent = String(game.score);
     el.recapDistance.textContent = game.meters + 'm';
     el.recapPickups.textContent = String(game.pickupsGot);
     el.recapHits.textContent = String(game.hits);
     el.recapJumps.textContent = String(game.jumpsUsed);
     el.recapChain.textContent = 'x' + game.bestChain;
+    if (prevBestM > 0 && game.meters > prevBestM) {
+      el.recapDelta.textContent = '+' + (game.meters - prevBestM) + 'm over best';
+      el.recapDelta.classList.add('is-new-best');
+    } else if (prevBestM > 0) {
+      el.recapDelta.textContent = 'best ' + prevBestM + 'm';
+      el.recapDelta.classList.remove('is-new-best');
+    } else {
+      el.recapDelta.textContent = '\u2014';
+      el.recapDelta.classList.remove('is-new-best');
+    }
+    renderChart();
     el.recapBest.textContent = newBest && game.score > 0 ? 'Yes!' : 'No';
     el.recapBest.classList.toggle('is-new-best', newBest && game.score > 0);
     show(el.ovOver, true);
@@ -499,6 +609,15 @@
     setPauseEnabled(true);
     ensureLoop();
     syncHud();
+  }
+
+  // S5: same-seed-for-everyone daily run; the date string is hashed in the
+  // pure meta module so the core never sees a clock.
+  function startDailyRound() {
+    game = PG.createGame({ rng: PG.mulberry32(META.seedFromDate(dateStamp())) });
+    game.best = loadBest();
+    if (window.__gameTest) window.__gameTest.game = game;
+    startRound();
   }
 
   function setPauseEnabled(on) { el.btnPause.disabled = !on; el.btnPause.setAttribute('aria-pressed', 'false'); }
@@ -612,6 +731,7 @@
   // ---------- buttons ----------
   el.btnStart.addEventListener('click', function () { startRound(); });
   el.btnReplay.addEventListener('click', function () { startRound(); });
+  el.btnDaily.addEventListener('click', function () { startDailyRound(); });
   el.btnResume.addEventListener('click', doResume);
   el.btnPause.addEventListener('click', function () {
     if (game.state === 'playing') doPause(); else if (game.state === 'paused') doResume();
@@ -684,6 +804,7 @@
   // ---------- boot ----------
   resize();
   syncHud();
+  renderMissions();
   show(el.ovStart, true);
   draw();
 })();

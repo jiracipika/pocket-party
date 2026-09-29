@@ -35,7 +35,9 @@
         <h2>Donut Dash</h2>
         <p class="card-text">Tap to jump, tap again mid-air to double jump. Crates cost a heart; snacks are +25.</p>
         <p class="best-line hidden" id="startBestLine">Personal best <b id="startBest">0</b></p>
+        <ul class="missions" id="missionList"></ul>
         <button id="btnStart" class="btn btn-primary" type="button">Start Game</button>
+        <button id="btnDaily" class="btn btn-ghost" type="button">Daily Run</button>
         <p class="hint">Space / Up / W to jump &middot; P to pause</p>
       </div>
     </div>
@@ -57,10 +59,12 @@
             <li><span>Distance</span><b id="recapDistance">0m</b></li>
             <li><span>Snacks grabbed</span><b id="recapPickups">0</b></li>
             <li><span>Best chain</span><b id="recapChain">&times;0</b></li>
+            <li><span>vs best distance</span><b id="recapDelta">&mdash;</b></li>
             <li><span>Crashes</span><b id="recapHits">0</b></li>
             <li><span>Jumps</span><b id="recapJumps">0</b></li>
             <li><span>New best?</span><b id="recapBest">No</b></li>
           </ul>
+          <div class="recap-chart" id="recapChart" aria-label="Best distance, last 7 days"></div>
         </div>
         <button id="btnReplay" class="btn btn-primary" type="button">Run Again</button>
         <button id="btnShare" class="btn btn-ghost" type="button">Share Score</button>
@@ -71,6 +75,7 @@
   <div class="sr-status" role="status" aria-live="polite" id="srStatus"></div>
 </main>
 <script src="core.js"></script>
+<script src="meta.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

@@ -302,3 +302,26 @@ button:focus-visible,a:focus-visible { outline: 3px solid var(--accent); outline
 @media (min-width: 700px) {
   .shell { max-width: 460px; padding-top: 24px; }
 }
+
+/* S5 meta: missions list on the start card + 7-day chart in the recap */
+.missions {
+  list-style: none;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 0;
+  margin: 0;
+  font-size: 12px;
+  color: var(--dim, rgba(255, 255, 255, 0.62));
+}
+.missions li { display: flex; align-items: center; gap: 7px; }
+.mission-mark { width: 14px; text-align: center; flex-shrink: 0; }
+.missions li.done { color: var(--accent); }
+.recap-chart {
+  display: flex;
+  justify-content: center;
+  padding: 4px 0 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  margin-top: 4px;
+}
