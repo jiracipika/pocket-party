@@ -12,6 +12,15 @@
   var ROUND_TIME = PG.ROUND_TIME;
 
   var qaMode = /(^|[?&])qa=1(&|$)/.test(window.location.search);
+  // High-contrast mode (?hc=1): swaps the four inks for a colorblind-safe
+  // Okabe-Ito subset (orange / bluish green / sky blue / yellow). Symbols on
+  // tokens and buttons already carry the answer; this removes the ink crowd.
+  var HC_HEX = { RED: '#e69f00', GREEN: '#009e73', BLUE: '#56b4e9', YELLOW: '#f0e442' };
+  if (/(^|[?&])hc=1(&|$)/.test(window.location.search)) {
+    for (var hcI = 0; hcI < COLORS.length; hcI++) {
+      if (HC_HEX[COLORS[hcI].name]) COLORS[hcI].hex = HC_HEX[COLORS[hcI].name];
+    }
+  }
 
   /* ---------- cached image assets (non-blocking; primitives until loaded) ---------- */
   var ASSETS = {
@@ -303,9 +312,16 @@
       ctx.stroke();
     }
     var cx = rect.x + rect.w / 2, cy = rect.y + rect.h / 2;
-    var s = Math.min(rect.w, rect.h) * 0.21;
+    var s = Math.min(rect.w, rect.h) * 0.24;
 
-    drawSymbolCue(idx, cx - rect.w * 0.18, cy, s);
+    // dark halo so the symbol survives the grain backdrop at a glance
+    var gx = cx - rect.w * 0.18;
+    ctx.beginPath();
+    ctx.arc(gx, cy, s * 1.22, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(13, 11, 20, 0.55)';
+    ctx.fill();
+
+    drawSymbolCue(idx, gx, cy, s);
 
     ctx.fillStyle = '#ffffff';
     ctx.font = '800 ' + Math.round(Math.min(rect.h * 0.3, 18)) + 'px "Avenir Next", sans-serif';

@@ -288,3 +288,42 @@ test('obstacles stay readable: >=450ms from spawn to the player at every speed',
   assert.ok(minMs >= 450,
     'obstacle readable window dipped to ' + minMs.toFixed(0) + 'ms at speed ' + g.speed);
 });
+
+test('no impossible sandwich: tall/double groups leave landing-recovery gap', () => {
+  // Groups arrive as same-tick spawn-ob batches. After a tall (38x78) or a
+  // double (crate +92px crate) the next group must leave the standard 1.05s
+  // land-then-rejump window PLUS GAP_RECOVERY px of landing runway. Seed 7
+  // demonstrably produced sub-recovery gaps after tall groups pre-fix.
+  const RECOVERY = PocketGame.createGame({ rng: mulberry32(7) }).CONST.GAP_RECOVERY;
+  const WIDTH = { tall: 38, wide: 80, crate: 42 };
+  const g = PocketGame.createGame({ rng: mulberry32(7) });
+  g.start();
+  g.hearts = 1e9; // invariant run: survive the full 120s
+  let batch = [], checked = 0, hardGroups = 0, prev = null;
+  const check = (grp, speed) => {
+    if (!grp.length) return;
+    const right = grp[grp.length - 1].x + WIDTH[grp[grp.length - 1].kind];
+    if (prev) {
+      const gap = grp[0].x - prev.right, v = prev.speed;
+      assert.ok(gap >= v * 1.05 - 1e-6,
+        'gap ' + gap.toFixed(0) + 'px < land-then-rejump ' + (v * 1.05).toFixed(0) + 'px at speed ' + v);
+      if (prev.hard) {
+        hardGroups++;
+        assert.ok(gap >= v * 1.05 + RECOVERY - 1e-6,
+          'gap after hard group ' + gap.toFixed(0) + 'px < ' + (v * 1.05 + RECOVERY).toFixed(0) + 'px at speed ' + v);
+      }
+      checked++;
+    }
+    prev = { right: right, speed: speed, hard: grp.some(o => o.kind === 'tall') || grp.length > 1 };
+  };
+  for (let t = 0; t < 120000 && g.state !== 'over'; t += 16) {
+    g.update(16);
+    const speed = g.speed;
+    for (const e of g.takeEvents()) {
+      if (e[0] === 'spawn-ob') batch.push({ kind: e[1], x: e[2] });
+    }
+    if (batch.length) { check(batch, speed); batch = []; }
+  }
+  assert.ok(checked > 25, 'fixture must see real group sequences, got ' + checked);
+  assert.ok(hardGroups > 4, 'fixture must see tall/double groups, got ' + hardGroups);
+});

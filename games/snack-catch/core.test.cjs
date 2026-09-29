@@ -240,3 +240,28 @@ test('bombs never spawn within the dodge radius of the basket', () => {
       'bomb spawned at x=' + x + ' with basket at 180 (min ' + BOMB_MIN_BASKET_DIST + ')');
   }
 });
+
+test('grace pacing: no bombs in the first 5 seconds of a round', () => {
+  // Seed 1 spawns a bomb within ~2.5s pre-grace; the round must open
+  // snacks-only and only start escalating after CONST.GRACE_MS.
+  const GRACE_MS = PocketGame.createGame({ rng: seededRng(1) }).CONST.GRACE_MS;
+  const g = PocketGame.createGame({ rng: seededRng(1) });
+  g.start();
+  let firstBombAt = -1, snacksInGrace = 0;
+  for (let t = 0; t <= 30000 && g.state === 'playing'; t += 16) {
+    g.update(16);
+    for (const e of g.takeEvents()) {
+      if (e[0] !== 'spawn') continue;
+      const elapsed = g.CONST.ROUND_MS - g.timeLeft;
+      if (e[1] === 'bomb') {
+        if (firstBombAt < 0) firstBombAt = elapsed;
+      } else if (elapsed < GRACE_MS) {
+        snacksInGrace++;
+      }
+    }
+  }
+  assert.ok(snacksInGrace > 0, 'grace window must still spawn snacks');
+  assert.ok(firstBombAt >= 0, 'fixture must see bombs after grace');
+  assert.ok(firstBombAt >= GRACE_MS,
+    'first bomb at ' + firstBombAt + 'ms, before the ' + GRACE_MS + 'ms grace ended');
+});

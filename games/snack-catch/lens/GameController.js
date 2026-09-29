@@ -24,6 +24,7 @@ var PocketCore=(function(){var module={exports:{}};
   var FALL_BASE = 145;            // px/sec start
   var FALL_MAX = 260;            // px/sec cap
   var BOMB_MIN_BASKET_DIST = 70; // bombs never spawn this close to the basket
+  var GRACE_MS = 5000;           // no bombs during the first 5s of a round
   var SPAWN_MIN = 0.45, SPAWN_MAX = 0.85; // seconds between spawns
 
   function mulberry32(seed) {
@@ -79,7 +80,8 @@ var PocketCore=(function(){var module={exports:{}};
       var prog = 1 - g.timeLeft / ROUND_MS;                 // 0..1
       var interval = SPAWN_MIN + (SPAWN_MAX - SPAWN_MIN) * (1 - prog);
       g._spawnTimer = interval;
-      var isBomb = rng() < (0.18 + 0.1 * prog);             // bomb ratio escalates
+      // grace pacing: escalation (bombs) only starts after the 5s grace window
+      var isBomb = elapsedPrivate() >= GRACE_MS && rng() < (0.18 + 0.1 * prog);
       var speed = FALL_BASE + (FALL_MAX - FALL_BASE) * prog * (0.8 + 0.4 * rng());
       speed = Math.min(FALL_MAX, speed); // variance must never exceed the cap
       var x = clamp(ITEM_R + rng() * (W - 2 * ITEM_R), ITEM_R, W - ITEM_R);
@@ -190,7 +192,7 @@ var PocketCore=(function(){var module={exports:{}};
     g.togglePause = togglePause;
     g.takeEvents = takeEvents;
     g.elapsedPrivate = elapsedPrivate;
-    g.CONST = { ROUND_MS: ROUND_MS, HEARTS: HEARTS, MAX_MULT: MAX_MULT, COMBO_STEP: COMBO_STEP, FALL_MAX: FALL_MAX, BOMB_MIN_BASKET_DIST: BOMB_MIN_BASKET_DIST };
+    g.CONST = { ROUND_MS: ROUND_MS, HEARTS: HEARTS, MAX_MULT: MAX_MULT, COMBO_STEP: COMBO_STEP, FALL_MAX: FALL_MAX, BOMB_MIN_BASKET_DIST: BOMB_MIN_BASKET_DIST, GRACE_MS: GRACE_MS };
     return g;
   }
 

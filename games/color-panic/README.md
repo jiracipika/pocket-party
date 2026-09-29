@@ -13,7 +13,7 @@ Open `games/color-panic/index.html` in any browser, or serve the folder:
 
 ```
 cd games/color-panic && python3 -m http.server 8123
-# http://localhost:8123/index.html   (add ?qa=1 for the QA hook)
+# http://localhost:8123/index.html   (add ?qa=1 for the QA hook, ?hc=1 for the high-contrast palette)
 ```
 
 ## Controls
@@ -91,6 +91,20 @@ re-proves behavioral identity after every rebuild.
   overlay recap, share, visibilitychange auto-pause, `?qa=1` test hook.
 - `lens/GameController.js` — generated Lens Studio controller (see
   `lens/SETUP.md` and `lens/build-lens.cjs`).
+
+### High-contrast palette
+
+Load `index.html?hc=1` (same pattern as `?qa=1`) to swap the four inks for a
+colorblind-safe Okabe-Ito subset — useful for deuteranopia/protanopia and on
+washed-out screens. The answer symbols (triangle/circle/square/diamond) are
+unchanged and still match button-for-button:
+
+| Color  | Default   | High contrast |
+|--------|-----------|---------------|
+| RED    | `#ff5d5d` | `#e69f00` (orange) |
+| GREEN  | `#3ddc84` | `#009e73` (bluish green) |
+| BLUE   | `#4aa8ff` | `#56b4e9` (sky blue) |
+| YELLOW | `#ffd23f` | `#f0e442` (yellow) |
 
 ### QA hook
 

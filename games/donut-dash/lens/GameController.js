@@ -38,6 +38,7 @@ var PocketCore=(function(){var module={exports:{}};
   var PX_PER_M = 32;             // distance readout
 
   var FIRST_OBST_AT = 520;       // world x of the first obstacle group
+  var GAP_RECOVERY = 140;        // extra px of gap after tall/double groups
 
   var KINDS = ['apple', 'donut', 'cookie', 'banana'];
 
@@ -81,8 +82,10 @@ var PocketCore=(function(){var module={exports:{}};
 
     // Edge-to-edge gap between obstacle groups. Always >= ~1.05s of run time,
     // so a land-then-rejump is possible at every speed the game can reach.
-    function nextGap(speed, r) {
-      return speed * 1.05 + r * (120 + speed * 0.45);
+    // Groups that cost a landing (tall, double) add GAP_RECOVERY px on top:
+    // the player touches down later and needs that much runway to re-set.
+    function nextGap(speed, r, hard) {
+      return speed * 1.05 + (hard ? GAP_RECOVERY : 0) + r * (120 + speed * 0.45);
     }
 
     function pickKind(prog) {
@@ -117,7 +120,7 @@ var PocketCore=(function(){var module={exports:{}};
         var pk = KINDS[Math.floor(rng() * KINDS.length) % KINDS.length];
         for (var i = 0; i < 3; i++) g.pickups.push({ x: baseX + i * 30, y: hy, r: 12, kind: pk });
       }
-      g._nextObstX = lastRight + nextGap(g.speed, rng());
+      g._nextObstX = lastRight + nextGap(g.speed, rng(), kind === 'tall' || kind === 'double');
     }
 
     function jump() {
@@ -237,7 +240,8 @@ var PocketCore=(function(){var module={exports:{}};
       JUMP_V: JUMP_V, JUMP2_V: JUMP2_V,
       SPEED_BASE: SPEED_BASE, SPEED_MAX: SPEED_MAX, SPEED_GAIN: SPEED_GAIN,
       PLAYER_X: PLAYER_X,
-      IFRAMES: IFRAMES, PICKUP_PTS: PICKUP_PTS, FIRST_OBST_AT: FIRST_OBST_AT
+      IFRAMES: IFRAMES, PICKUP_PTS: PICKUP_PTS, FIRST_OBST_AT: FIRST_OBST_AT,
+      GAP_RECOVERY: GAP_RECOVERY
     };
     return g;
   }
