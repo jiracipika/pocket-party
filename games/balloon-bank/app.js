@@ -13,6 +13,13 @@
   var ACCENT = '#7ddcff';
   var ACCENT_LIGHT = '#c2ecff';
   var DANGER = '#ff6b6b';
+  // S4 special balloon palettes (normal sky / golden / quick-leak pink / heart green)
+  var TYPE_COLORS = {
+    normal: { light: '#c2ecff', base: '#7ddcff', dark: '#3a8fb8' },
+    golden: { light: '#fff3c4', base: '#ffd23f', dark: '#b8860b' },
+    quick:  { light: '#ffd3de', base: '#ff8fa3', dark: '#b85c6e' },
+    heart:  { light: '#d0ffdf', base: '#7dffb2', dark: '#3aa874' }
+  };
 
   var el = {
     score: document.getElementById('hudScore'),
@@ -180,10 +187,11 @@
     var cx = BALLOON_X + wobble;
     var cy = BALLOON_ANCHOR_Y - r;   // balloon grows upward from the pad
     var nearPop = game.creaking;
+    var pal = TYPE_COLORS[game.type] || TYPE_COLORS.normal;
     var grad = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.35, r * 0.15, cx, cy, r);
-    grad.addColorStop(0, ACCENT_LIGHT);
-    grad.addColorStop(0.6, nearPop ? mix(ACCENT, DANGER, 0.35 + 0.25 * Math.sin(t * 18)) : ACCENT);
-    grad.addColorStop(1, nearPop ? '#a04a4a' : '#3a8fb8');
+    grad.addColorStop(0, pal.light);
+    grad.addColorStop(0.6, nearPop ? mix(pal.base, DANGER, 0.35 + 0.25 * Math.sin(t * 18)) : pal.base);
+    grad.addColorStop(1, nearPop ? '#a04a4a' : pal.dark);
     ctx.fillStyle = grad;
     ctx.beginPath();
     ctx.ellipse(cx, cy, r * 0.92, r, wobble * 0.01, 0, Math.PI * 2);
@@ -192,7 +200,7 @@
     ctx.lineWidth = 3;
     ctx.stroke();
     // knot + string
-    ctx.fillStyle = '#3a8fb8';
+    ctx.fillStyle = pal.dark;
     ctx.beginPath();
     ctx.moveTo(cx, cy + r);
     ctx.lineTo(cx - 5, cy + r + 8);
@@ -333,9 +341,15 @@
       var e = evs[i];
       if (e[0] === 'bank') {
         sfx.bank(e[2]);
-        popup(BALLOON_X, BALLOON_ANCHOR_Y - game.CONST.R_MIN - 120, '+' + e[1] + (e[2] > 1 ? ' (x' + e[2] + ')' : ''), e[2] > 1);
-        burst(BALLOON_X, BALLOON_ANCHOR_Y - 60, ACCENT, 10);
+        var label = '+' + e[1] + (e[2] > 1 ? ' (x' + e[2] + ')' : '');
+        if (e[3] === 'golden') label += ' GOLD';
+        else if (e[3] === 'heart') label += ' +\u2665';
+        popup(BALLOON_X, BALLOON_ANCHOR_Y - game.CONST.R_MIN - 120, label, e[2] > 1 || e[3] === 'golden');
+        burst(BALLOON_X, BALLOON_ANCHOR_Y - 60, (TYPE_COLORS[e[3]] || TYPE_COLORS.normal).base, 10);
         announce('Banked ' + e[1] + ' points.');
+      } else if (e[0] === 'heart') {
+        burst(BALLOON_X, BALLOON_ANCHOR_Y - 90, TYPE_COLORS.heart.base, 14, 600);
+        announce('Heart restored!');
       } else if (e[0] === 'pop') {
         sfx.pop();
         var popY = BALLOON_ANCHOR_Y - 70; // core zeroes radius before the event lands
@@ -469,7 +483,8 @@
           threshold: Math.round(game.threshold * 1000) / 1000,
           chain: game.chain, bestChain: game.bestChain,
           timeLeft: game.timeLeft, banks: game.banks, pops: game.pops,
-          held: game.held, creaking: game.creaking, respawnMs: game.respawnMs
+          held: game.held, creaking: game.creaking, respawnMs: game.respawnMs,
+          type: game.type
         };
       },
       start: startRound,

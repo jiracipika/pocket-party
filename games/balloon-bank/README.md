@@ -26,6 +26,12 @@ cd games/balloon-bank && python3 -m http.server 8126
 - **Creak warning**: guaranteed by test to engage at least **250ms before the
   earliest possible pop** — when you hear/see it, banking is still safe,
   pumping more may not be.
+- **Special balloons** (S4, weights via injected rng, never in the final 2s):
+  **golden** (10%, from the 3rd bank onward) pays **3x** with a ~20% narrower
+  pop window; **quick-leak** (15%) deflates 3x faster while idle; **heart**
+  (rare, only while hurt, max one per heart lost) restores a heart when banked
+  at >= 80% of max radius. Each type wears its own color: sky, gold, pink,
+  green.
 - Round expiry or 0 hearts ends the run. Recap: banks, biggest bank, pops,
   best chain, new-best flag.
 
@@ -54,7 +60,7 @@ leaderboard, no sign-ups — personal bests stay on this device.
 
 ## Status
 
-Browser playable (S1+S2 complete, 2026-09-29). Landing integration and the
-browser-suite block are live (S3). Native lens project: not assembled yet —
+Browser playable (S1-S4 complete, 2026-09-29: specials live). Landing
+integration and the browser-suite block are live (S3). Native lens project: not assembled yet —
 S6 covers it, and **nothing here is device-validated** (S7 gates, including
 the hold-vs-Snapchat-long-press check, are user-manual).

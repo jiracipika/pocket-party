@@ -14,6 +14,23 @@ controller input wired, clean single `GameController` asset — runs in the
 Lens Studio 5.24 preview with **no script errors**, same two benign
 "api is deprecated" warnings as the others).
 
+Controller reimports (2026-09-29): all four shipped lens projects now embed
+their CURRENT generated controllers (donut, snack, stack, color). Each
+scene-referenced asset was verified by uuid (.meta PrimaryAsset vs the scene's
+ScriptAsset), replaced byte-identical to games/<slug>/lens/GameController.js,
+and preview-gated in Studio 5.24 via MCP openProject: 0 script errors each
+(2 known deprecation warnings). Device behavior remains NOT validated (S7).
+KNOWN DEFECT (color-panic, pre-existing): the committed scene wires
+`choiceTransforms`/`choiceLabels` as empty arrays (ScriptInputsHidden in
+Scene.scene) — answer-slot tap routing and choice labels are no-ops natively
+even though the preview gate passes; the generated controller defends with
+`|| []`. Fixing the wiring is open S6 work for color-panic.
+
+Balloon Bank (2026-09-29): fifth game BUILT and integrated — browser playable
+S1-S4 (core + app + specials), landing card live, suite extended. No native
+project yet (its S6); the hold-vs-Snapchat-long-press question is its S7
+headline gate.
+
 Materials (2026-09-28): white placeholders replaced — donut (golden player,
 brown crates), snack (mint basket `#7dffb2`), stack (25-material hue ramp
 `hsl((k*14+40)%360, 85%, 60%)` matching the core's block hues + gold moving

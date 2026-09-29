@@ -222,3 +222,90 @@ test('module shape (UMD exports)', () => {
   assert.equal(PocketGame.bankPointsFor(0), 0);
   assert.equal(PocketGame.bankPointsFor(PocketGame.createGame({ rng: fixedRng() }).CONST.R_MAX), 100);
 });
+
+function queueRng(values) { // deterministic rng that repeats a scripted draw sequence
+  let i = 0;
+  return function () { return values[i++ % values.length]; };
+}
+
+test('golden: gated to the 3rd bank onward, 3x value, narrowed window', () => {
+  // draws cycle [0.10, 0.50]: 0.10 rolls quick pre-gate / golden once banks >= 2
+  const g = PocketGame.createGame({ rng: queueRng([0.10, 0.50]) });
+  g.start();
+  assert.equal(g.type, 'quick', 'before the gate the same roll is a quick balloon');
+  g.setHold(true); g.update(300); g.bank(); // bank 1 (roll 0.20, banks=1 -> still quick)
+  assert.equal(g.type, 'quick', 'gate needs two banks already banked');
+  g.setHold(true); g.update(300); g.bank(); // bank 2 (roll 0.20, banks=2 -> GOLDEN)
+  assert.equal(g.type, 'golden', 'golden unlocks from the 3rd bank onward');
+  assert.ok(g.threshold >= 0.5 && g.threshold <= 0.9,
+    'golden threshold window narrowed to ~[0.5,0.9] vs [0.45,0.95]');
+  g.setHold(true); g.update(300);
+  const goldenRadius = g.radius;
+  const pts = g.bank(); // this is bank 3: chain tier x2 applies on top of golden 3x
+  const base = PocketGame.bankPointsFor(goldenRadius);
+  assert.equal(pts, base * 3 * 2, 'golden pays 3x base, x2 chain tier on the 3rd bank');
+});
+
+test('quick: idle leak is 3x LEAK_RATE', () => {
+  const g = PocketGame.createGame({ rng: queueRng([0.32]) }); // 0.32 -> quick
+  g.start();
+  assert.equal(g.type, 'quick');
+  g.setHold(true); g.update(700); // radius 77.5, well above the leak floor
+  const r0 = g.radius;
+  g.setHold(false);
+  g.update(1000); // 1s idle
+  const dropped = r0 - g.radius;
+  assert.ok(Math.abs(dropped - g.CONST.LEAK_RATE * 3) < 1e-6,
+    'quick balloon leaked ' + dropped + 'px/s, expected ' + g.CONST.LEAK_RATE * 3);
+});
+
+test('heart: only while hurt, restores at >=80% bank, one per heart lost', () => {
+  // draws cycle [0.50, 0.05, 0.95]: start normal; pop -> 0.05 rolls heart;
+  // 0.95 gives the heart balloon a high threshold so 120px is reachable
+  const g = PocketGame.createGame({ rng: queueRng([0.50, 0.05, 0.95]) });
+  g.start();
+  assert.equal(g.type, 'normal', 'full hearts: no heart balloon');
+  g.setHold(true);
+  for (let i = 0; i < 400 && g.pops === 0; i++) g.update(STEP);
+  assert.equal(g.hearts, 2);
+  assert.equal(g.type, 'heart', 'hurt now: the 0.05 draw rolls a heart balloon');
+  g.setHold(true); // respawn blocks pumping for ~250ms, then pump up to 120px
+  for (let i = 0; i < 200 && g.radius < g.CONST.HEART_BANK_FRACTION * g.CONST.R_MAX; i++) {
+    g.update(STEP);
+  }
+  assert.ok(g.radius >= g.CONST.HEART_BANK_FRACTION * g.CONST.R_MAX - 1e-9,
+    'banked at >= 80% radius (radius ' + g.radius.toFixed(1) + ')');
+  g.bank();
+  assert.equal(g.hearts, 3, 'heart restored');
+  assert.equal(g.heartClaimed, true);
+  // with hearts full the next roll cannot be a heart even on a 0.05 draw
+  g.setHold(true); g.update(200); g.bank();
+  const seenTypes = [g.type];
+  g.setHold(true); g.update(200); g.bank();
+  seenTypes.push(g.type);
+  assert.ok(!seenTypes.includes('heart'), 'no second heart balloon while full');
+});
+
+test('final-2s guard: no specials can roll near the end', () => {
+  const g = PocketGame.createGame({ rng: queueRng([0.01]) }); // would be heart/golden otherwise
+  g.start();
+  g.timeLeft = g.CONST.FINAL_GUARD_MS - 1;
+  g.setHold(true); g.update(300); g.bank();
+  assert.equal(g.type, 'normal', 'roll inside the final 2s is always normal');
+});
+
+test('special type sequence is seed-deterministic', () => {
+  function types(seed) {
+    const g = PocketGame.createGame({ rng: seededRng(seed) });
+    g.start();
+    const out = [];
+    for (let i = 0; i < 600 && g.state === 'playing'; i++) {
+      g.setHold(i % 41 < 26);
+      if (i % 67 === 0 && g.radius > g.CONST.R_MIN + 10) { out.push(g.type); g.bank(); }
+      g.update(STEP);
+    }
+    return out.join(',');
+  }
+  assert.equal(types(9), types(9), 'same seed -> same type sequence');
+  assert.notEqual(types(9), types(10), 'different seed -> different types');
+});
