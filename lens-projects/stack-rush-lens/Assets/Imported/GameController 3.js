@@ -33,14 +33,12 @@ var PocketCore=(function(){var module={exports:{}};
 
   var BASE_SPEED = 120;         // logical px / second
   var SPEED_GAIN = 8;           // speed added per layer
-  var MAX_SPEED = 340;          // capped
+  var MAX_SPEED = 300;          // capped (keeps the ±8px alignment window >= ~53ms)
 
   var START_W = 220;            // first block width
   var MIN_W = 12;               // below this the round is lost
   var DEBRIS_GRAVITY = 1400;
   var DEBRIS_LIFETIME = 1.4;    // seconds
-
-  var CAMERA_DEADZONE = 80;     // px above tower top before camera pans
 
   // ---- helpers (pure, local) -------------------------------
   function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
@@ -90,6 +88,7 @@ var PocketCore=(function(){var module={exports:{}};
       height: height,
       // last-drop feedback for renderer/tests
       lastEvent: null,         // {type:'drop'|'perfect'|'miss', ...}
+      lastSpawnSide: null,     // 'left'|'right' — alternates for spawn fairness
       events: []               // queue of events this update tick consumed
     };
 
@@ -118,6 +117,7 @@ var PocketCore=(function(){var module={exports:{}};
       state.cameraY = 0;
       state.time = 0;
       state.lastEvent = null;
+      state.lastSpawnSide = null;
       state.events = [];
       spawnBlock();
       return state;
@@ -127,10 +127,20 @@ var PocketCore=(function(){var module={exports:{}};
       var prev = state.layers.length ? state.layers[state.layers.length - 1] : null;
       var w = prev ? prev.w : START_W;
       var dir = rng() < 0.5 ? -1 : 1;
-      // Spawn at the field edge farthest from the previous block, never
-      // already perfectly aligned (otherwise rapid tapping wins forever).
+      // First block starts centered; afterwards spawn sides strictly alternate
+      // (fairness: no permanent single-edge sweeps) and never spawn already
+      // perfectly aligned with the previous block (rapid-tap guard).
       var x = (width - w) / 2;
-      if (prev) { x = prev.x < (width - w) / 2 ? width - w : 0; dir = x === 0 ? 1 : -1; }
+      if (prev) {
+        var side = state.lastSpawnSide === null
+          ? (rng() < 0.5 ? 'left' : 'right')
+          : (state.lastSpawnSide === 'right' ? 'left' : 'right');
+        var xl = 0, xr = width - w;
+        x = side === 'left' ? xl : xr;
+        if (Math.abs(x - prev.x) < 1) x = (x === xl) ? xr : xl;
+        state.lastSpawnSide = x === xl ? 'left' : 'right';
+        dir = x === 0 ? 1 : -1;
+      }
       // clamp inside field
       x = clamp(x, 0, width - w);
       var y = towerTopY(); // bottom edge aligns with top of previous layer
@@ -390,7 +400,7 @@ return module.exports;})();
  var best=0,store=null,acc=0,dragging=false,previousPhase='ready';
  var key='pocket-party-'+GAME_ID+'-best';
  try {store=global.persistentStorageSystem.store;best=Math.max(0,store.getInt(key)||0);}catch(e){}
- function state(){return GAME_ID==='snack-catch'?game:game.getState();}
+ function state(){return (GAME_ID==='snack-catch'||GAME_ID==='donut-dash')?game:game.getState();}
  function phase(){var s=state();return s.phase||s.state;}
  function component(so,name){return so?so.getComponent('Component.'+name):null;}
  function enable(so,on){if(so)so.enabled=on;}
@@ -422,6 +432,11 @@ return module.exports;})();
    for(var j=0;j<s.layers.length;j++){var r=game.toScreen(s.layers[j]);if(r.y+r.h>=0&&r.y<=640)visible.push(r);}
    for(var k=0;k<layers.length;k++){var l=visible[k];enable(layers[k],!!l);if(l)rect(layers[k],l.x,l.y,l.w,l.h);}
    enable(script.movingBlock,!!s.moving);if(s.moving){var m=game.toScreen(s.moving);rect(script.movingBlock,m.x,m.y,m.w,m.h);}
+  }else if(GAME_ID==='donut-dash'){
+   text(script.timeText,s.meters+'m  '+s.hearts+' hearts  •  '+Math.floor(s.time)+'s');
+   rect(script.basket,s.player.x-s.player.w/2,s.player.y-s.player.h,s.player.w,s.player.h);
+   var obs=script.itemPool||[];
+   for(var d2=0;d2<obs.length;d2++){var ob=s.obstacles[d2];enable(obs[d2],!!ob);if(ob)rect(obs[d2],ob.x-s.x,ob.y,ob.w,ob.h);}
   }else{
    text(script.timeText,Math.ceil(s.roundTimeLeft)+'s  '+s.hearts+' hearts  •  '+s.targetTimeLeft.toFixed(1)+'s to match');
    if(s.targetIndex>=0){text(script.targetText,PocketCore.COLORS[s.targetWord].name);color(script.targetText,PocketCore.COLORS[s.targetIndex].hex);text(script.targetSymbol,symbols[s.targetIndex]);color(script.targetSymbol,PocketCore.COLORS[s.targetIndex].hex);}
@@ -437,6 +452,7 @@ return module.exports;})();
   if(phase()==='paused'){resume();return;}
   if(GAME_ID==='snack-catch'){dragging=true;setBasket(p);}
   else if(GAME_ID==='stack-rush')game.drop();
+  else if(GAME_ID==='donut-dash')game.jump();
   else {var choices=script.choiceTransforms||[];for(var i=0;i<choices.length&&i<4;i++){if(inside(choices[i],p)){game.pressSlot(i);break;}}}
   render();
  });
@@ -444,7 +460,7 @@ return module.exports;})();
  script.createEvent('TouchEndEvent').bind(function(){dragging=false;});
  script.createEvent('UpdateEvent').bind(function(){
   var dt=Math.max(0,Math.min(getDeltaTime(),.1));acc+=dt;
-  while(acc>=1/60){game.update(GAME_ID==='snack-catch'?1000/60:1/60);acc-=1/60;}
+  while(acc>=1/60){game.update((GAME_ID==='snack-catch'||GAME_ID==='donut-dash')?1000/60:1/60);acc-=1/60;}
   if(typeof game.takeEvents==='function')game.takeEvents();if(typeof game.events==='function')game.events();render();
  });
  script.createEvent('OnStartEvent').bind(function(){global.touchSystem.touchBlocking=true;render();});

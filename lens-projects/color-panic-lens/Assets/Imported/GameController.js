@@ -43,6 +43,9 @@ var PocketCore=(function(){var module={exports:{}};
   var TIMER_MAX = 2.5;        // generous initial per-target timer
   var TIMER_MIN = 0.9;        // shrinks toward this as score rises
   var TIMER_MIN_SCORE = 180;  // score at which the minimum is reached
+  var CONFUSION_BONUS = 0.15; // extra seconds on hue-family traps
+  // Genuine Stroop confusables (warm/cool hue pairs): RED<->YELLOW, GREEN<->BLUE.
+  var HUE_FAMILY = [3, 2, 1, 0];
 
   function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
@@ -56,19 +59,28 @@ var PocketCore=(function(){var module={exports:{}};
 
   /**
    * Pick a target slot without repeating the previous one, and pick a
-   * Stroop word that conflicts at least half the time.
+   * Stroop word that conflicts at least half the time. Conflicts bias
+   * toward the hue-family partner (the genuinely confusable pair) and
+   * family traps get slightly more time so difficulty comes from the
+   * confusion itself, not from unfair timing.
    */
   function nextTarget(prev, random) {
     var slot = pickIndex(random, SLOT_COUNT);
     if (slot === prev) slot = (slot + 1) % SLOT_COUNT; // no immediate repeats
     // ~50% of the time the word names a DIFFERENT color (the Stroop trap).
     var word = slot;
+    var confusable = false;
     if (random() < 0.5) {
-      word = pickIndex(random, SLOT_COUNT - 1);
-      if (word >= slot) word += 1;
-      if (word >= SLOT_COUNT) word = SLOT_COUNT - 1;
+      if (random() < 0.6) {
+        word = HUE_FAMILY[slot]; // the true look-alike color
+        confusable = true;
+      } else {
+        word = pickIndex(random, SLOT_COUNT - 1);
+        if (word >= slot) word += 1;
+        if (word >= SLOT_COUNT) word = SLOT_COUNT - 1;
+      }
     }
-    return { slot: slot, word: word };
+    return { slot: slot, word: word, confusable: confusable };
   }
 
   function timerFor(score) {
@@ -105,6 +117,7 @@ var PocketCore=(function(){var module={exports:{}};
     var score = 0, combo = 0, bestCombo = 0, heartsLeft = hearts;
     var roundTimeLeft = ROUND_TIME; // whole-round countdown
     var targetSlot = -1, targetWord = -1;
+    var targetConfusable = false;
     var timeLeft = 0, timeTotal = 0;
     var lockTimer = 0;     // >0 while input is ignored
     var lastOutcome = null; // { hit, slot, points, reason }
@@ -113,7 +126,8 @@ var PocketCore=(function(){var module={exports:{}};
       var t = nextTarget(targetSlot, random);
       targetSlot = t.slot;
       targetWord = t.word;
-      timeTotal = timerFor(score);
+      targetConfusable = t.confusable;
+      timeTotal = timerFor(score) + (t.confusable ? CONFUSION_BONUS : 0);
       timeLeft = timeTotal;
     }
 
@@ -128,6 +142,7 @@ var PocketCore=(function(){var module={exports:{}};
         score = 0; combo = 0; bestCombo = 0; heartsLeft = hearts;
         roundTimeLeft = ROUND_TIME;
         targetSlot = -1; targetWord = -1;
+        targetConfusable = false;
         timeLeft = 0; timeTotal = 0; lockTimer = 0;
         lastOutcome = null;
         freshTarget();
@@ -228,6 +243,7 @@ var PocketCore=(function(){var module={exports:{}};
           roundTimeLeft: roundTimeLeft,
           targetIndex: targetSlot,
           targetWord: targetWord,
+          targetConfusable: targetConfusable,
           targetTimeLeft: timeLeft,
           targetTimeTotal: timeTotal,
           lastOutcome: lastOutcome
@@ -254,6 +270,8 @@ var PocketCore=(function(){var module={exports:{}};
     TIMER_MAX: TIMER_MAX,
     TIMER_MIN: TIMER_MIN,
     TIMER_MIN_SCORE: TIMER_MIN_SCORE,
+    CONFUSION_BONUS: CONFUSION_BONUS,
+    HUE_FAMILY: HUE_FAMILY,
     ROUND_TIME: ROUND_TIME
   };
 });
@@ -284,7 +302,7 @@ return module.exports;})();
  var best=0,store=null,acc=0,dragging=false,previousPhase='ready';
  var key='pocket-party-'+GAME_ID+'-best';
  try {store=global.persistentStorageSystem.store;best=Math.max(0,store.getInt(key)||0);}catch(e){}
- function state(){return GAME_ID==='snack-catch'?game:game.getState();}
+ function state(){return (GAME_ID==='snack-catch'||GAME_ID==='donut-dash')?game:game.getState();}
  function phase(){var s=state();return s.phase||s.state;}
  function component(so,name){return so?so.getComponent('Component.'+name):null;}
  function enable(so,on){if(so)so.enabled=on;}
@@ -316,6 +334,11 @@ return module.exports;})();
    for(var j=0;j<s.layers.length;j++){var r=game.toScreen(s.layers[j]);if(r.y+r.h>=0&&r.y<=640)visible.push(r);}
    for(var k=0;k<layers.length;k++){var l=visible[k];enable(layers[k],!!l);if(l)rect(layers[k],l.x,l.y,l.w,l.h);}
    enable(script.movingBlock,!!s.moving);if(s.moving){var m=game.toScreen(s.moving);rect(script.movingBlock,m.x,m.y,m.w,m.h);}
+  }else if(GAME_ID==='donut-dash'){
+   text(script.timeText,s.meters+'m  '+s.hearts+' hearts  •  '+Math.floor(s.time)+'s');
+   rect(script.basket,s.player.x-s.player.w/2,s.player.y-s.player.h,s.player.w,s.player.h);
+   var obs=script.itemPool||[];
+   for(var d2=0;d2<obs.length;d2++){var ob=s.obstacles[d2];enable(obs[d2],!!ob);if(ob)rect(obs[d2],ob.x-s.x,ob.y,ob.w,ob.h);}
   }else{
    text(script.timeText,Math.ceil(s.roundTimeLeft)+'s  '+s.hearts+' hearts  •  '+s.targetTimeLeft.toFixed(1)+'s to match');
    if(s.targetIndex>=0){text(script.targetText,PocketCore.COLORS[s.targetWord].name);color(script.targetText,PocketCore.COLORS[s.targetIndex].hex);text(script.targetSymbol,symbols[s.targetIndex]);color(script.targetSymbol,PocketCore.COLORS[s.targetIndex].hex);}
@@ -331,6 +354,7 @@ return module.exports;})();
   if(phase()==='paused'){resume();return;}
   if(GAME_ID==='snack-catch'){dragging=true;setBasket(p);}
   else if(GAME_ID==='stack-rush')game.drop();
+  else if(GAME_ID==='donut-dash')game.jump();
   else {var choices=script.choiceTransforms||[];for(var i=0;i<choices.length&&i<4;i++){if(inside(choices[i],p)){game.pressSlot(i);break;}}}
   render();
  });
@@ -338,7 +362,7 @@ return module.exports;})();
  script.createEvent('TouchEndEvent').bind(function(){dragging=false;});
  script.createEvent('UpdateEvent').bind(function(){
   var dt=Math.max(0,Math.min(getDeltaTime(),.1));acc+=dt;
-  while(acc>=1/60){game.update(GAME_ID==='snack-catch'?1000/60:1/60);acc-=1/60;}
+  while(acc>=1/60){game.update((GAME_ID==='snack-catch'||GAME_ID==='donut-dash')?1000/60:1/60);acc-=1/60;}
   if(typeof game.takeEvents==='function')game.takeEvents();if(typeof game.events==='function')game.events();render();
  });
  script.createEvent('OnStartEvent').bind(function(){global.touchSystem.touchBlocking=true;render();});

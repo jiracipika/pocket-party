@@ -23,6 +23,8 @@ var PocketCore=(function(){var module={exports:{}};
   var MAX_MULT = 3;
   var FALL_BASE = 145;            // px/sec start
   var FALL_MAX = 260;            // px/sec cap
+  var BOMB_MIN_BASKET_DIST = 70; // bombs never spawn this close to the basket
+  var GRACE_MS = 5000;           // no bombs during the first 5s of a round
   var SPAWN_MIN = 0.45, SPAWN_MAX = 0.85; // seconds between spawns
 
   function mulberry32(seed) {
@@ -78,9 +80,23 @@ var PocketCore=(function(){var module={exports:{}};
       var prog = 1 - g.timeLeft / ROUND_MS;                 // 0..1
       var interval = SPAWN_MIN + (SPAWN_MAX - SPAWN_MIN) * (1 - prog);
       g._spawnTimer = interval;
-      var isBomb = rng() < (0.18 + 0.1 * prog);             // bomb ratio escalates
+      // grace pacing: escalation (bombs) only starts after the 5s grace window
+      var isBomb = elapsedPrivate() >= GRACE_MS && rng() < (0.18 + 0.1 * prog);
       var speed = FALL_BASE + (FALL_MAX - FALL_BASE) * prog * (0.8 + 0.4 * rng());
+      speed = Math.min(FALL_MAX, speed); // variance must never exceed the cap
       var x = clamp(ITEM_R + rng() * (W - 2 * ITEM_R), ITEM_R, W - ITEM_R);
+      if (isBomb) {
+        // spawn-time fairness: resample away from the basket so a bomb never
+        // appears with effectively zero dodge distance
+        for (var tries = 0; tries < 8 && Math.abs(x - g.basket.x) < BOMB_MIN_BASKET_DIST; tries++) {
+          x = clamp(ITEM_R + rng() * (W - 2 * ITEM_R), ITEM_R, W - ITEM_R);
+        }
+        if (Math.abs(x - g.basket.x) < BOMB_MIN_BASKET_DIST) {
+          x = g.basket.x <= W / 2
+            ? clamp(g.basket.x + BOMB_MIN_BASKET_DIST, ITEM_R, W - ITEM_R)
+            : clamp(g.basket.x - BOMB_MIN_BASKET_DIST, ITEM_R, W - ITEM_R);
+        }
+      }
       g.items.push({
         x: x, y: -ITEM_R,
         vy: speed,
@@ -176,7 +192,7 @@ var PocketCore=(function(){var module={exports:{}};
     g.togglePause = togglePause;
     g.takeEvents = takeEvents;
     g.elapsedPrivate = elapsedPrivate;
-    g.CONST = { ROUND_MS: ROUND_MS, HEARTS: HEARTS, MAX_MULT: MAX_MULT, COMBO_STEP: COMBO_STEP, FALL_MAX: FALL_MAX };
+    g.CONST = { ROUND_MS: ROUND_MS, HEARTS: HEARTS, MAX_MULT: MAX_MULT, COMBO_STEP: COMBO_STEP, FALL_MAX: FALL_MAX, BOMB_MIN_BASKET_DIST: BOMB_MIN_BASKET_DIST, GRACE_MS: GRACE_MS };
     return g;
   }
 
@@ -214,7 +230,7 @@ return module.exports;})();
  var best=0,store=null,acc=0,dragging=false,previousPhase='ready';
  var key='pocket-party-'+GAME_ID+'-best';
  try {store=global.persistentStorageSystem.store;best=Math.max(0,store.getInt(key)||0);}catch(e){}
- function state(){return GAME_ID==='snack-catch'?game:game.getState();}
+ function state(){return (GAME_ID==='snack-catch'||GAME_ID==='donut-dash')?game:game.getState();}
  function phase(){var s=state();return s.phase||s.state;}
  function component(so,name){return so?so.getComponent('Component.'+name):null;}
  function enable(so,on){if(so)so.enabled=on;}
@@ -246,6 +262,11 @@ return module.exports;})();
    for(var j=0;j<s.layers.length;j++){var r=game.toScreen(s.layers[j]);if(r.y+r.h>=0&&r.y<=640)visible.push(r);}
    for(var k=0;k<layers.length;k++){var l=visible[k];enable(layers[k],!!l);if(l)rect(layers[k],l.x,l.y,l.w,l.h);}
    enable(script.movingBlock,!!s.moving);if(s.moving){var m=game.toScreen(s.moving);rect(script.movingBlock,m.x,m.y,m.w,m.h);}
+  }else if(GAME_ID==='donut-dash'){
+   text(script.timeText,s.meters+'m  '+s.hearts+' hearts  •  '+Math.floor(s.time)+'s');
+   rect(script.basket,s.player.x-s.player.w/2,s.player.y-s.player.h,s.player.w,s.player.h);
+   var obs=script.itemPool||[];
+   for(var d2=0;d2<obs.length;d2++){var ob=s.obstacles[d2];enable(obs[d2],!!ob);if(ob)rect(obs[d2],ob.x-s.x,ob.y,ob.w,ob.h);}
   }else{
    text(script.timeText,Math.ceil(s.roundTimeLeft)+'s  '+s.hearts+' hearts  •  '+s.targetTimeLeft.toFixed(1)+'s to match');
    if(s.targetIndex>=0){text(script.targetText,PocketCore.COLORS[s.targetWord].name);color(script.targetText,PocketCore.COLORS[s.targetIndex].hex);text(script.targetSymbol,symbols[s.targetIndex]);color(script.targetSymbol,PocketCore.COLORS[s.targetIndex].hex);}
@@ -261,6 +282,7 @@ return module.exports;})();
   if(phase()==='paused'){resume();return;}
   if(GAME_ID==='snack-catch'){dragging=true;setBasket(p);}
   else if(GAME_ID==='stack-rush')game.drop();
+  else if(GAME_ID==='donut-dash')game.jump();
   else {var choices=script.choiceTransforms||[];for(var i=0;i<choices.length&&i<4;i++){if(inside(choices[i],p)){game.pressSlot(i);break;}}}
   render();
  });
@@ -268,7 +290,7 @@ return module.exports;})();
  script.createEvent('TouchEndEvent').bind(function(){dragging=false;});
  script.createEvent('UpdateEvent').bind(function(){
   var dt=Math.max(0,Math.min(getDeltaTime(),.1));acc+=dt;
-  while(acc>=1/60){game.update(GAME_ID==='snack-catch'?1000/60:1/60);acc-=1/60;}
+  while(acc>=1/60){game.update((GAME_ID==='snack-catch'||GAME_ID==='donut-dash')?1000/60:1/60);acc-=1/60;}
   if(typeof game.takeEvents==='function')game.takeEvents();if(typeof game.events==='function')game.events();render();
  });
  script.createEvent('OnStartEvent').bind(function(){global.touchSystem.touchBlocking=true;render();});
