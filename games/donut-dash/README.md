@@ -34,12 +34,22 @@ are mapped through the canvas bounding rect. DPR scaling is capped at 1.5.
 - Obstacle groups are always separated by at least ~1.05s of run time, so a
   land-then-rejump is possible at every speed. This is a core invariant with
   a dedicated unit test.
-- Snack pickups (apple, cookie, banana, donut) spawn in arcs of three in the
-  gaps: **+25 each**. Pickups never damage.
+- Snack pickups (apple, cookie, banana, donut) spawn on real jump-arc trails
+  through the gaps: **+25 each**. Pickups never damage.
+- Chain: consecutive snacks without a crash pay **x2 from 5** and **x3 from
+  10** pickups; a crash resets the chain. The recap keeps the best chain.
+- Golden donut (rare, rides just above a trail apex): **+75** (3x).
+- Shield (rare): eats one crash — no heart lost, no i-frames; badge shows on
+  the hearts chip while held. Magnet (rare): for **5s** pickups within 80px
+  pull to the player. Specials never appear before 800px and respect an 8s
+  cooldown between spawns.
+- Spring crates (mint, coil-marked; after ~35% difficulty ramp): landing on
+  TOP of one bounces you up instead of crashing — side hits still cost a
+  heart.
 - Crashing into a crate costs **1 heart** (3 total) and grants 1.2s of mercy
   i-frames; the crashed crate is marked and cannot hit twice. 0 hearts ends
   the run.
 - Local best score via `localStorage`, guarded with try/catch (private mode
-  safe). Game-over recap: distance, snacks, crashes, jumps, new-best flag.
+  safe). Game-over recap: distance, snacks, best chain, crashes, jumps, new-best flag.
 - Share via `navigator.share` with clipboard-copy and prompt fallback. No
   leaderboard — your best score is local only.

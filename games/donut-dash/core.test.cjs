@@ -73,26 +73,35 @@ test('gravity keeps player at or above ground, never below', () => {
 
 test('obstacles spawn ahead, cull behind, gaps stay jump-clearable', () => {
   const g = newGame(); g.start();
-  let prevRight = -Infinity, maxSpeedSeen = 0;
+  let maxSpeedSeen = 0, spawned = 0;
+  // gap invariant is set at the previous group's SPAWN tick, so measure it
+  // with spawn-time speed from spawn-ob events (same method as the sandwich
+  // fixture); the cull/ahead asserts still walk the live obstacle list.
+  let prevSpawnRight = -Infinity, prevSpawnSpeed = 0;
+  const WIDTH = { tall: 38, wide: 80, crate: 42, spring: 42 };
   for (let i = 0; i < 3000 && g.state === 'playing'; i++) {
     g.update(STEP);
     maxSpeedSeen = Math.max(maxSpeedSeen, g.speed);
+    for (const e of g.takeEvents()) {
+      if (e[0] !== 'spawn-ob') continue;
+      spawned++;
+      const right = e[2] + WIDTH[e[1]];
+      if (prevSpawnRight > -Infinity) {
+        const gap = e[2] - prevSpawnRight;
+        assert.ok(gap >= prevSpawnSpeed * 1.04,
+          `gap ${gap.toFixed(1)} must exceed spawn speed ${prevSpawnSpeed.toFixed(1)} x 1.04`);
+      }
+      prevSpawnRight = right;
+      prevSpawnSpeed = g.speed;
+    }
     for (const ob of g.obstacles) {
       assert.ok(ob.x + ob.w > g.x - 80 - 0.001, 'culled behind the camera');
       assert.ok(ob.x < g.x + g.W + 400, 'spawned just off screen');
-      if (ob.x > prevRight) {
-        const gap = ob.x - prevRight;
-        if (prevRight > -Infinity) {
-          assert.ok(gap >= g.speed * 1.04,
-            `gap ${gap.toFixed(1)} must exceed speed ${g.speed.toFixed(1)} x 1.04`);
-        }
-        prevRight = ob.x + ob.w;
-      }
     }
     // occasionally jump so the run survives; gaps stay valid regardless
     if (i % 40 === 0) g.jump();
   }
-  assert.ok(prevRight > 0, 'obstacles were spawned');
+  assert.ok(spawned > 0, 'obstacles were spawned');
   assert.ok(g.speed > g.CONST.SPEED_BASE, 'speed escalates');
 });
 
@@ -295,7 +304,7 @@ test('no impossible sandwich: tall/double groups leave landing-recovery gap', ()
   // land-then-rejump window PLUS GAP_RECOVERY px of landing runway. Seed 7
   // demonstrably produced sub-recovery gaps after tall groups pre-fix.
   const RECOVERY = PocketGame.createGame({ rng: mulberry32(7) }).CONST.GAP_RECOVERY;
-  const WIDTH = { tall: 38, wide: 80, crate: 42 };
+  const WIDTH = { tall: 38, wide: 80, crate: 42, spring: 42 };
   const g = PocketGame.createGame({ rng: mulberry32(7) });
   g.start();
   g.hearts = 1e9; // invariant run: survive the full 120s
@@ -369,7 +378,7 @@ test('snack trails sit on the jump arc inside the gap (reachable)', () => {
   // and it stays clear of both the group behind and the group ahead.
   const C = PocketGame.createGame({ rng: mulberry32(11) }).CONST;
   const apex = C.JUMP_V * C.JUMP_V / (2 * C.GRAVITY);
-  const WIDTH = { tall: 38, wide: 80, crate: 42 };
+  const WIDTH = { tall: 38, wide: 80, crate: 42, spring: 42 };
   const g = PocketGame.createGame({ rng: mulberry32(11) });
   g.start();
   g.hearts = 1e9;
@@ -405,4 +414,116 @@ test('snack trails sit on the jump arc inside the gap (reachable)', () => {
     }
   }
   assert.ok(points > 20, 'fixture must see real trail points, got ' + points);
+});
+
+test('spring crate: top hit bounces without damage, side hit still crashes', () => {
+  const g = PocketGame.createGame({ rng: () => 0.5 });
+  g.start();
+  const groundY = g.CONST.GROUND_Y;
+  // drop the player onto a spring's top from above
+  const sx = g.x + g.player.x + 10;
+  g.obstacles.push({ x: sx, y: groundY - 46, w: 42, h: 46, kind: 'spring', hit: false });
+  g.player.y = groundY - 55;  // feet above the spring top
+  g.player.vy = 500;          // falling
+  g.update(16); g.update(16); // two ticks to cross the top-inset plane
+  assert.equal(g.hearts, 3, 'top bounce costs no heart');
+  assert.ok(g.player.vy < 0, 'player bounced upward');
+  assert.ok(g.takeEvents().some(e => e[0] === 'spring'), 'spring event emitted');
+  // a side hit (grounded, already level with the crate body) still crashes
+  g.player.y = groundY; g.player.vy = 0; g.player.onGround = true;
+  g.obstacles.push({ x: g.x + g.player.x + 4, y: groundY - 46, w: 42, h: 46, kind: 'spring', hit: false });
+  g.update(16);
+  assert.equal(g.hearts, 2, 'side hit costs a heart');
+  assert.ok(g.iframes > 0, 'side hit grants i-frames');
+});
+
+test('shield: pickup arms it, crash consumes it without losing a heart', () => {
+  const g = PocketGame.createGame({ rng: () => 0.5 });
+  g.start();
+  const groundY = g.CONST.GROUND_Y;
+  g.pickups.push({ x: g.x + g.player.x, y: g.player.y - 20, r: 12, kind: 'shield' });
+  g.update(16);
+  assert.equal(g.shield, true, 'shield pickup arms the shield');
+  assert.equal(g.chain, 0, 'utility pickups do not build the chain');
+  g.obstacles.push({ x: g.x + g.player.x + 4, y: groundY - 46, w: 42, h: 46, kind: 'crate', hit: false });
+  g.update(16);
+  assert.equal(g.hearts, 3, 'shield ate the crash');
+  assert.equal(g.hits, 0, 'shielded crash is not a counted crash');
+  assert.equal(g.shield, false, 'shield consumed');
+  assert.ok(g.takeEvents().some(e => e[0] === 'shield-used'), 'shield-used event emitted');
+  assert.ok(g.iframes <= 0, 'no i-frame change on shield consumption');
+  // without a shield the same crash costs a heart
+  g.obstacles.push({ x: g.x + g.player.x + 4, y: groundY - 46, w: 42, h: 46, kind: 'crate', hit: false });
+  g.update(16);
+  assert.equal(g.hearts, 2, 'unshielded crash costs the heart');
+});
+
+test('magnet: pickup arms it and pulls nearby pickups to the player', () => {
+  const g = PocketGame.createGame({ rng: () => 0.5 });
+  g.start();
+  g.pickups.push({ x: g.x + g.player.x, y: g.player.y - 20, r: 12, kind: 'magnet' });
+  g.update(16);
+  assert.equal(g.magnetT, g.CONST.MAGNET_TIME, 'magnet pickup arms the timer');
+  // a snack inside the radius gets pulled and then collected
+  const px = g.x + g.player.x;
+  g.pickups.push({ x: px + 60, y: g.player.y - 20, r: 12, kind: 'cookie' });
+  const d0 = Math.abs(g.pickups[g.pickups.length - 1].x - px);
+  g.update(16);
+  const snack = g.pickups[g.pickups.length - 1];
+  const collected = g.pickupsGot === 2 || !g.pickups.some(p => p.kind === 'cookie');
+  if (!collected) {
+    const d1 = Math.abs(snack.x - (g.x + g.player.x));
+    assert.ok(d1 < d0, 'pickup moved toward the player while magnet active');
+  }
+  assert.ok(collected || g.magnetT < g.CONST.MAGNET_TIME, 'magnet timer ticks down');
+  // outside the radius the pickup keeps its world position (no pull)
+  const farX = g.x + g.player.x + 300;
+  g.pickups.push({ x: farX, y: g.player.y - 20, r: 12, kind: 'cookie' });
+  const far = g.pickups[g.pickups.length - 1];
+  g.update(16);
+  if (g.pickups.includes(far)) {
+    assert.equal(far.x, farX, 'far pickup keeps its world x (not pulled)');
+  }
+});
+
+test('golden donut scores 3x a snack and builds the chain', () => {
+  const g = PocketGame.createGame({ rng: () => 0.5 });
+  g.start();
+  g.pickups.push({ x: g.x + g.player.x, y: g.player.y - 20, r: 12, kind: 'golden' });
+  const before = g.pickupScore;
+  g.update(16);
+  assert.equal(g.pickupScore - before, g.CONST.PICKUP_PTS * g.CONST.GOLDEN_MULT, 'golden pays 3x');
+  assert.equal(g.chain, 1, 'golden builds the chain');
+});
+
+test('special spawn weights: deterministic, cooldown-gated, never in the opening', () => {
+  const seeds = [3, 21, 99];
+  for (const seed of seeds) {
+    const run = (sameRng) => {
+      const g = PocketGame.createGame({ rng: mulberry32(seed) });
+      g.start(); g.hearts = 1e9;
+      const specials = [];
+      let maxSeenX = -Infinity, lastAt = -Infinity;
+      for (let t = 0; t < 120000 && g.state !== 'over'; t += 16) {
+        g.update(16);
+        if (sameRng) {
+          for (const p of g.pickups) {
+            if (p.x > maxSeenX) {
+              maxSeenX = p.x;
+              if (p.kind === 'shield' || p.kind === 'magnet') {
+                assert.ok(p.x >= 800, 'special spawned in the opening at x=' + p.x.toFixed(0));
+                assert.ok(g.time - lastAt >= g.CONST.POWERUP_COOLDOWN - 1e-9 || lastAt < 0,
+                  'special spawned before the cooldown elapsed');
+                lastAt = g.time;
+                specials.push(p.kind);
+              }
+            }
+          }
+        }
+      }
+      return specials;
+    };
+    const a = run(true), b = run(true);
+    assert.deepEqual(a, b, 'special spawns must be seed-deterministic');
+  }
 });

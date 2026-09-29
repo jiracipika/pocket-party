@@ -32,6 +32,20 @@
   var PICKUP_PTS = 25;
   var CHAIN_TIER2 = 5;           // consecutive pickups for x2
   var CHAIN_TIER3 = 10;          // consecutive pickups for x3
+
+  // S4 variety: rare pickups + spring crates (all weights via injected rng)
+  var GOLDEN_CHANCE = 0.04;      // per-trail upgrade to a golden donut
+  var GOLDEN_MULT = 3;           // golden donut point multiplier
+  var SHIELD_CHANCE = 0.05;      // rare shield pickup (eats one crash)
+  var MAGNET_CHANCE = 0.05;      // rare magnet pickup
+  var MAGNET_TIME = 5;           // seconds of pickup attraction
+  var MAGNET_RADIUS = 80;        // px pull radius
+  var MAGNET_PULL = 340;         // px/s toward the player
+  var SPECIAL_MIN_X = 800;       // no shield/magnet in the opening
+  var POWERUP_COOLDOWN = 8;      // seconds between shield/magnet spawns
+  var SPRING_CHANCE = 0.18;      // of crate-head groups past SPRING_PROG
+  var SPRING_PROG = 0.35;        // difficulty fraction when springs may appear
+  var SPRING_V = 760;            // bounce impulse (below JUMP_V)
   var SCORE_PER_PX = 1 / 12;     // distance -> score
   var PX_PER_M = 32;             // distance readout
 
@@ -73,11 +87,14 @@
       pickupsGot: 0, hits: 0, jumpsUsed: 0,
       chain: 0, bestChain: 0, chainMult: 1,  // consecutive pickups, crash resets
       pickupScore: 0,                        // snack points with chain multipliers
+      shield: false,                         // eats one crash instead of a heart
+      magnetT: 0,                            // seconds of pickup attraction left
       player: { x: PLAYER_X, y: GROUND_Y, w: PLAYER_W, h: PLAYER_H, vy: 0, onGround: true, jumps: 0 },
       obstacles: [],             // world-space: {x (left), y (top), w, h, kind, hit}
       pickups: [],               // world-space: {x (center), y (center), r, kind}
-      events: [],                // ['jump'|'pickup'|'hit'|'spawn-ob'|'over'|'start'|'pause'|'resume', ...]
+      events: [],                // ['jump'|'pickup'|'hit'|'spring'|'shield-used'|'spawn-ob'|'over'|'start'|'pause'|'resume', ...]
       _nextObstX: FIRST_OBST_AT,
+      _nextSpecialAt: 0,
       _rng: rng
     };
 
@@ -98,6 +115,8 @@
       if (prog > 0.25 && roll < 0.16) return 'tall';
       if (prog > 0.4 && roll < 0.28) return 'double';
       if (prog > 0.15 && roll < 0.46) return 'wide';
+      // crate heads past SPRING_PROG may be spring crates (bounce on top hit)
+      if (prog > SPRING_PROG && rng() < SPRING_CHANCE) return 'spring';
       return 'crate';
     }
 
@@ -107,7 +126,7 @@
       var o;
       if (kind === 'tall') o = mkObst(38, 78, g._nextObstX, 'tall');
       else if (kind === 'wide') o = mkObst(80, 44, g._nextObstX, 'wide');
-      else o = mkObst(42, 46, g._nextObstX, 'crate');
+      else o = mkObst(42, 46, g._nextObstX, kind === 'spring' ? 'spring' : 'crate');
       g.obstacles.push(o);
       g.events.push(['spawn-ob', o.kind, o.x, o.y]);
       var lastRight = o.x + o.w;
@@ -135,6 +154,24 @@
           if (sx > gapEnd - 50) break;
           var h = JUMP_V * tt - 0.5 * GRAVITY * tt * tt; // feet height on that arc
           g.pickups.push({ x: sx, y: GROUND_Y - h, r: 12, kind: pk });
+        }
+        // rare golden donut riding slightly above the trail apex
+        if (rng() < GOLDEN_CHANCE) {
+          var gx = startX + v * (flight / 2);
+          if (gx <= gapEnd - 50) {
+            var apexH = JUMP_V * JUMP_V / (2 * GRAVITY);
+            g.pickups.push({ x: gx, y: GROUND_Y - apexH - 15, r: 12, kind: 'golden' });
+          }
+        }
+      }
+      // rare shield/magnet in mid-gap: never in the opening, cooldown-gated
+      if (g.x >= SPECIAL_MIN_X && g.time >= g._nextSpecialAt) {
+        var sr = rng();
+        if (sr < SHIELD_CHANCE + MAGNET_CHANCE) {
+          var kindp = sr < SHIELD_CHANCE ? 'shield' : 'magnet';
+          var mh = 55 + rng() * 60;                    // jump-reachable height
+          g.pickups.push({ x: (lastRight + gapEnd) / 2, y: GROUND_Y - mh, r: 12, kind: kindp });
+          g._nextSpecialAt = g.time + POWERUP_COOLDOWN;
         }
       }
       g._nextObstX = gapEnd;
@@ -187,7 +224,22 @@
           it = g.obstacles[i];
           if (it.hit) continue;
           if (pr > it.x + 3 && pl < it.x + it.w - 3 && pb > it.y + 3 && pt < it.y + it.h) {
+            // spring crates bounce on TOP hits only (was above the top last
+            // frame while falling); side/bottom hits still crash
+            if (it.kind === 'spring' && p.vy > 0 && (pb - p.vy * dt) <= it.y + 12) {
+              it.hit = true;
+              p.vy = -SPRING_V;
+              p.jumps = 1;            // air jump available again after the bounce
+              g.events.push(['spring', it.x - g.x, it.y]);
+              break;
+            }
             it.hit = true;
+            if (g.shield) {           // shield eats the crash: no heart, no iframes
+              g.shield = false;
+              g.chain = 0; g.chainMult = 1;
+              g.events.push(['shield-used', it.x - g.x, it.y]);
+              break;
+            }
             g.hits++;
             g.hearts--;
             g.chain = 0; g.chainMult = 1;   // a crash breaks the snack chain
@@ -203,16 +255,39 @@
           }
         }
       }
+      // magnet: pull nearby pickups toward the player while active
+      if (g.magnetT > 0) {
+        g.magnetT = Math.max(0, g.magnetT - dt);
+        var mx = g.x + p.x, my = p.y - p.h / 2;
+        for (i = 0; i < g.pickups.length; i++) {
+          var mp = g.pickups[i];
+          var mdx = mx - mp.x, mdy = my - mp.y;
+          var md = Math.sqrt(mdx * mdx + mdy * mdy);
+          if (md < MAGNET_RADIUS && md > 1) {
+            var pull = Math.min(MAGNET_PULL * dt, md);
+            mp.x += mdx / md * pull;
+            mp.y += mdy / md * pull;
+          }
+        }
+      }
       for (i = g.pickups.length - 1; i >= 0; i--) {
         var pk = g.pickups[i];
         if (pr > pk.x - 10 && pl < pk.x + 10 && pb > pk.y - 10 && pt < pk.y + 10) {
           g.pickups.splice(i, 1);
           g.pickupsGot++;
-          g.chain++;
-          if (g.chain > g.bestChain) g.bestChain = g.chain;
-          g.chainMult = chainMultFor(g.chain);
-          g.pickupScore += PICKUP_PTS * g.chainMult;
-          g.events.push(['pickup', pk.kind, pk.x - g.x, pk.y, g.chainMult]);
+          if (pk.kind === 'shield') {
+            g.shield = true;
+            g.events.push(['pickup', 'shield', pk.x - g.x, pk.y, 1]);
+          } else if (pk.kind === 'magnet') {
+            g.magnetT = MAGNET_TIME;
+            g.events.push(['pickup', 'magnet', pk.x - g.x, pk.y, 1]);
+          } else {
+            g.chain++;
+            if (g.chain > g.bestChain) g.bestChain = g.chain;
+            g.chainMult = chainMultFor(g.chain);
+            g.pickupScore += (pk.kind === 'golden' ? PICKUP_PTS * GOLDEN_MULT : PICKUP_PTS) * g.chainMult;
+            g.events.push(['pickup', pk.kind, pk.x - g.x, pk.y, g.chainMult]);
+          }
         }
       }
 
@@ -227,6 +302,7 @@
       g.speed = SPEED_BASE; g.iframes = 0;
       g.pickupsGot = 0; g.hits = 0; g.jumpsUsed = 0;
       g.chain = 0; g.bestChain = 0; g.chainMult = 1; g.pickupScore = 0;
+      g.shield = false; g.magnetT = 0; g._nextSpecialAt = 0;
       g.player.x = PLAYER_X; g.player.y = GROUND_Y;
       g.player.vy = 0; g.player.onGround = true; g.player.jumps = 0;
       g.obstacles.length = 0;
@@ -264,7 +340,9 @@
       SPEED_BASE: SPEED_BASE, SPEED_MAX: SPEED_MAX, SPEED_GAIN: SPEED_GAIN,
       PLAYER_X: PLAYER_X,
       IFRAMES: IFRAMES, PICKUP_PTS: PICKUP_PTS, FIRST_OBST_AT: FIRST_OBST_AT,
-      GAP_RECOVERY: GAP_RECOVERY, CHAIN_TIER2: CHAIN_TIER2, CHAIN_TIER3: CHAIN_TIER3
+      GAP_RECOVERY: GAP_RECOVERY, CHAIN_TIER2: CHAIN_TIER2, CHAIN_TIER3: CHAIN_TIER3,
+      GOLDEN_MULT: GOLDEN_MULT, MAGNET_TIME: MAGNET_TIME, MAGNET_RADIUS: MAGNET_RADIUS,
+      SPRING_V: SPRING_V, POWERUP_COOLDOWN: POWERUP_COOLDOWN
     };
     return g;
   }

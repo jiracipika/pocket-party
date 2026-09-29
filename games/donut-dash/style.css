@@ -135,6 +135,14 @@ body {
   box-shadow: 0 4px 12px rgba(255, 154, 128, 0.35);
 }
 .chain-badge[hidden] { display: none; }
+
+/* S4 shield badge rides the hearts chip; accent-colored shield glyph */
+.shield-badge {
+  color: #35160c;
+  display: inline-grid;
+  place-items: center;
+  padding: 3px 5px;
+}
 .chip.hearts { justify-content: center; font-size: 16px; letter-spacing: 3px; color: var(--danger); min-height: 48px; text-shadow: 0 0 12px rgba(255, 107, 107, 0.35); }
 
 .stage {

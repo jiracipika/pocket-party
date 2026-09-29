@@ -31,9 +31,10 @@
     grain.src = GRAIN_URL;
   })();
   var SNACK_COLORS = {
-    apple: '#ff5b5b', donut: '#ffb0d8', cookie: '#e8b25c', banana: '#ffe15c'
+    apple: '#ff5b5b', donut: '#ffb0d8', cookie: '#e8b25c', banana: '#ffe15c',
+    golden: '#ffd23f', shield: '#6ecbff', magnet: '#c9a0ff'
   };
-  var OB_COLORS = { crate: '#e7a541', tall: '#f17c62', wide: '#bd9cff' };
+  var OB_COLORS = { crate: '#e7a541', tall: '#f17c62', wide: '#bd9cff', spring: '#7dffb2' };
 
   var cv = document.getElementById('game');
   var ctx = cv.getContext('2d');
@@ -45,8 +46,9 @@
     startBestLine: document.getElementById('startBestLine'),
     startBest: document.getElementById('startBest'),
     dist: document.getElementById('hudDist'),
-    hearts: document.getElementById('hudHearts'),
+    hearts: document.getElementById('hudHeartsVal'),
     chain: document.getElementById('hudChain'),
+    shield: document.getElementById('hudShield'),
     ovStart: document.getElementById('ovStart'),
     ovPause: document.getElementById('ovPause'),
     ovOver: document.getElementById('ovOver'),
@@ -112,6 +114,9 @@
     jump: function () { blip(440, 0.09, 'triangle', 0.11); },
     jump2: function () { blip(660, 0.1, 'triangle', 0.11); blip(880, 0.08, 'triangle', 0.08, 0.05); },
     pickup: function () { blip(880, 0.07, 'sine', 0.1); blip(1320, 0.09, 'sine', 0.09, 0.06); },
+    power: function () { blip(523, 0.08, 'sine', 0.11); blip(784, 0.09, 'sine', 0.1, 0.06); blip(1047, 0.12, 'sine', 0.09, 0.12); },
+    spring: function () { blip(300, 0.06, 'square', 0.09); blip(720, 0.12, 'triangle', 0.11, 0.04); },
+    shieldDown: function () { blip(392, 0.1, 'triangle', 0.11); blip(262, 0.16, 'triangle', 0.1, 0.07); },
     hit: function () { blip(130, 0.22, 'sawtooth', 0.15); blip(85, 0.28, 'sawtooth', 0.11, 0.04); },
     heart: function () { blip(76, 0.1, 'sine', 0.13); blip(60, 0.16, 'sine', 0.1, 0.17); },
     over: function () { blip(392, 0.12, 'triangle', 0.1); blip(294, 0.14, 'triangle', 0.1, 0.1); blip(196, 0.22, 'triangle', 0.1, 0.2); },
@@ -310,6 +315,17 @@
     ctx.strokeStyle = '#0a0a0f';
     ctx.lineWidth = 4;
     roundRect(ctx, x, ob.y, ob.w, ob.h, 6); ctx.stroke();
+    if (ob.kind === 'spring') { // coil mark instead of the plank cross
+      ctx.strokeStyle = '#0a0a0f';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      for (var sy = 8; sy <= ob.h - 8; sy += 7) {
+        ctx.moveTo(x + 8, ob.y + sy);
+        ctx.lineTo(x + ob.w - 8, ob.y + Math.min(sy + 5, ob.h - 8));
+      }
+      ctx.stroke();
+      return;
+    }
     // plank cross
     ctx.beginPath();
     ctx.moveTo(x + 5, ob.y + 5); ctx.lineTo(x + ob.w - 5, ob.y + ob.h - 5);
@@ -349,6 +365,26 @@
     ctx.strokeStyle = '#0a0a0f';
     ctx.lineWidth = 3;
     ctx.beginPath(); ctx.arc(x, y, 10, 0, Math.PI * 2); ctx.stroke();
+    // S4 specials get a white glyph so they read as more than snacks
+    if (pk.kind === 'golden') {
+      ctx.strokeStyle = '#fff6c9'; ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x, y - 5); ctx.lineTo(x, y + 5);
+      ctx.moveTo(x - 5, y); ctx.lineTo(x + 5, y);
+      ctx.stroke();
+    } else if (pk.kind === 'shield') {
+      ctx.fillStyle = '#e8f6ff';
+      ctx.beginPath();
+      ctx.moveTo(x, y - 6); ctx.lineTo(x + 5, y - 3); ctx.lineTo(x + 5, y + 2);
+      ctx.lineTo(x, y + 6); ctx.lineTo(x - 5, y + 2); ctx.lineTo(x - 5, y - 3);
+      ctx.closePath(); ctx.fill();
+    } else if (pk.kind === 'magnet') {
+      ctx.strokeStyle = '#efe6ff'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(x, y + 1, 4.5, Math.PI, 0, false); ctx.stroke();
+      ctx.fillStyle = '#efe6ff';
+      ctx.fillRect(x - 6, y + 1, 2.5, 4);
+      ctx.fillRect(x + 3.5, y + 1, 2.5, 4);
+    }
   }
 
   function draw() {
@@ -398,6 +434,7 @@
     el.hearts.textContent = fmtHearts(game.hearts);
     el.chain.hidden = game.chainMult <= 1;
     el.chain.textContent = 'x' + game.chainMult;
+    el.shield.hidden = !game.shield;
   }
   function show(ov, on) { ov.classList.toggle('hidden', !on); }
   function announce(msg) { el.srStatus.textContent = msg; }
@@ -415,10 +452,18 @@
         } else sfx.jump();
       }
       else if (e[0] === 'pickup') {
-        sfx.pickup();
-        burst(e[2], e[3], SNACK_COLORS[e[1]] || ACCENT, e[4] >= 3 ? 14 : (e[4] >= 2 ? 10 : 8));
-        burst(e[2], e[3], '#ffffff', 4, 150); // white sparkle over the snack burst
+        if (e[1] === 'shield' || e[1] === 'magnet') {
+          sfx.power();
+          burst(e[2], e[3], SNACK_COLORS[e[1]] || ACCENT, 12);
+          burst(e[2], e[3], '#ffffff', 5, 150);
+        } else {
+          sfx.pickup();
+          burst(e[2], e[3], SNACK_COLORS[e[1]] || ACCENT, e[4] >= 3 ? 14 : (e[4] >= 2 ? 10 : 8));
+          burst(e[2], e[3], '#ffffff', 4, 150); // white sparkle over the snack burst
+        }
       }
+      else if (e[0] === 'spring') { sfx.spring(); burst(e[2], e[3], '#7dffb2', 10); }
+      else if (e[0] === 'shield-used') { sfx.shieldDown(); burst(e[2], e[3], '#6ecbff', 14, 130); }
       else if (e[0] === 'hit') { sfx.hit(); burst(e[2], e[3] + 20, DANGER, 16, 130); shakeT = 0.18; flashT = HIT_FLASH_T; }
       else if (e[0] === 'over') sfx.over();
       else if (e[0] === 'start') sfx.start();
@@ -623,7 +668,8 @@
           onGround: game.player.onGround, playerY: game.player.y,
           obstacles: game.obstacles.length, pickups: game.pickups.length,
           pickupsGot: game.pickupsGot, hits: game.hits, iframes: game.iframes,
-          chain: game.chain, bestChain: game.bestChain, chainMult: game.chainMult
+          chain: game.chain, bestChain: game.bestChain, chainMult: game.chainMult,
+          shield: game.shield, magnetT: game.magnetT
         };
       },
       start: startRound,
