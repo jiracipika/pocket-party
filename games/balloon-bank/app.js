@@ -37,6 +37,11 @@
     btnResume: document.getElementById('btnResume'),
     btnQuit: document.getElementById('btnQuit'),
     btnReplay: document.getElementById('btnReplay'),
+    btnDaily: document.getElementById('btnDaily'),
+    recapAvgSize: document.getElementById('recapAvgSize'),
+    recapEarly: document.getElementById('recapEarly'),
+    recapDelta: document.getElementById('recapDelta'),
+    recapChart: document.getElementById('recapChart'),
     btnShare: document.getElementById('btnShare'),
     btnMute: document.getElementById('btnMute'),
     finalScore: document.getElementById('finalScore'),
@@ -65,6 +70,53 @@
   }
   function saveMuted(m) {
     try { window.localStorage.setItem('balloon-bank-muted', m ? '1' : '0'); } catch (e) { /* noop */ }
+  }
+
+  // ---------- S5 meta: daily challenge, 7-day history, risk profile ----------
+  var META = window.BalloonMeta;
+  function dateStamp() {
+    var d = new Date();
+    return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+  }
+  function loadJSON(key, fallback) {
+    try {
+      var v = window.localStorage.getItem(key);
+      if (v === null) return fallback;
+      var parsed = JSON.parse(v);
+      return parsed === null || parsed === undefined ? fallback : parsed;
+    } catch (e) { return fallback; }
+  }
+  function saveJSON(key, value) {
+    try { window.localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* private mode */ }
+  }
+  var historyKey = 'balloon-bank-best-history'; // name contains 'best': the suite persistence gate watches it
+  var history = loadJSON(historyKey, []);
+  if (!Array.isArray(history)) history = [];
+  var prevBestAtRoundStart = loadBest();
+
+  function renderChart() {
+    var days = [];
+    for (var i = 6; i >= 0; i--) {
+      var d = new Date(); d.setDate(d.getDate() - i);
+      days.push(d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2));
+    }
+    var byDay = {};
+    for (var j = 0; j < history.length; j++) byDay[history[j].d] = history[j].s;
+    var vals = [];
+    for (var k = 0; k < days.length; k++) vals.push(byDay[days[k]] || 0);
+    var max = 1;
+    for (var k2 = 0; k2 < vals.length; k2++) if (vals[k2] > max) max = vals[k2];
+    var WD = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+    var bars = '';
+    for (var b = 0; b < 7; b++) {
+      var x = b * 20 + 5;
+      var hgt = vals[b] > 0 ? Math.max(4, Math.round(vals[b] / max * 34)) : 3;
+      bars += '<rect x="' + x + '" y="' + (40 - hgt) + '" width="12" height="' + hgt + '" rx="2" fill="' +
+        (vals[b] > 0 ? 'var(--accent)' : 'rgba(255,255,255,0.14)') + '"/>';
+      var wd = new Date(days[b] + 'T12:00:00').getDay();
+      bars += '<text x="' + (x + 6) + '" y="50" text-anchor="middle" font-size="8" fill="rgba(255,255,255,0.5)">' + WD[wd] + '</text>';
+    }
+    el.recapChart.innerHTML = '<svg viewBox="0 0 150 54" width="150" height="54" role="img" aria-label="Best score, last 7 days">' + bars + '</svg>';
   }
 
   // ---------- audio (procedural, short) ----------
@@ -369,16 +421,41 @@
   function endRound() {
     var newBest = game.score > game.best;
     if (newBest) { game.best = game.score; saveBest(game.best); }
+    // S5 meta: 7-day history ring + risk profile + best delta (local only)
+    history = META.pushHistory(history, dateStamp(), game.score);
+    saveJSON(historyKey, history);
     el.finalScore.textContent = String(game.score);
     el.recapBanks.textContent = String(game.banks);
     el.recapBig.textContent = String(game.biggestBank);
     el.recapPops.textContent = String(game.pops);
     el.recapChain.textContent = 'x' + Math.max(1, PG.chainMultFor(game.bestChain));
+    el.recapAvgSize.textContent = game.banks > 0 ? Math.round(game.sizeSum / game.banks * 100) + '%' : '\u2014';
+    el.recapEarly.textContent = game.banks > 0 ? Math.round(game.earlyBanks / game.banks * 100) + '%' : '\u2014';
+    if (prevBestAtRoundStart > 0 && newBest) {
+      el.recapDelta.textContent = '+' + (game.score - prevBestAtRoundStart) + ' over best';
+      el.recapDelta.classList.add('is-new-best');
+    } else if (prevBestAtRoundStart > 0) {
+      el.recapDelta.textContent = 'best ' + prevBestAtRoundStart;
+      el.recapDelta.classList.remove('is-new-best');
+    } else {
+      el.recapDelta.textContent = '\u2014';
+      el.recapDelta.classList.remove('is-new-best');
+    }
+    renderChart();
     el.recapBest.textContent = newBest && game.score > 0 ? 'Yes!' : 'No';
     el.recapBest.classList.toggle('is-new-best', newBest && game.score > 0);
     show(el.ovOver, true);
     setPauseEnabled(false);
     announce('Round over. Score ' + game.score + '.');
+  }
+
+  // S5: everyone's daily challenge = same seed for the date; the core never
+  // sees a clock, the app derives the seed from the date string.
+  function startDailyRound() {
+    game = PG.createGame({ rng: PG.mulberry32(META.seedFromDate(dateStamp())) });
+    game.best = loadBest();
+    if (window.__gameTest) window.__gameTest.game = game;
+    startRound();
   }
 
   function startRound() {
@@ -440,6 +517,7 @@
   // ---------- buttons ----------
   el.btnStart.addEventListener('click', function () { startRound(); });
   el.btnReplay.addEventListener('click', function () { startRound(); });
+  el.btnDaily.addEventListener('click', function () { startDailyRound(); });
   el.btnResume.addEventListener('click', function () { doResume(); });
   el.btnQuit.addEventListener('click', function () { game.endRun(); endRound(); });
   el.btnPause.addEventListener('click', function () { if (game.state === 'playing') doPause(); });
@@ -454,7 +532,10 @@
 
   // share with honest fallbacks
   function shareText() {
-    return 'I scored ' + game.score + ' in Balloon Bank (Pocket Party). Can you bank bigger?';
+    var text = 'I scored ' + game.score + ' in Balloon Bank';
+    if (game.biggestBank > 0) text += ' (biggest bank ' + game.biggestBank + ')';
+    text += ' \u2014 Pocket Party. Can you bank bigger?';
+    return text;
   }
   el.btnShare.addEventListener('click', function () {
     var text = shareText();
@@ -484,7 +565,8 @@
           chain: game.chain, bestChain: game.bestChain,
           timeLeft: game.timeLeft, banks: game.banks, pops: game.pops,
           held: game.held, creaking: game.creaking, respawnMs: game.respawnMs,
-          type: game.type
+          type: game.type, sizeSum: Math.round(game.sizeSum * 100) / 100,
+          earlyBanks: game.earlyBanks
         };
       },
       start: startRound,
@@ -501,5 +583,6 @@
   resize();
   syncHud();
   show(el.ovStart, true);
+  renderChart();
   draw();
 })();

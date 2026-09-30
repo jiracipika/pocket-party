@@ -36,6 +36,7 @@
         <p class="card-text">Hold anywhere to pump the balloon. Release to bank it &mdash; bigger pays more. Every balloon hides a pop limit!</p>
         <p class="best-line hidden" id="startBestLine">Personal best <b id="startBest">0</b></p>
         <button id="btnStart" class="btn btn-primary" type="button">Start Game</button>
+        <button id="btnDaily" class="btn btn-ghost" type="button">Daily Challenge</button>
         <p class="hint">Hold Space to pump &middot; P to pause</p>
       </div>
     </div>
@@ -58,8 +59,12 @@
             <li><span>Biggest bank</span><b id="recapBig">0</b></li>
             <li><span>Pops</span><b id="recapPops">0</b></li>
             <li><span>Best chain</span><b id="recapChain">&times;1</b></li>
+            <li><span>Avg bank size</span><b id="recapAvgSize">&mdash;</b></li>
+            <li><span>Banked early</span><b id="recapEarly">&mdash;</b></li>
+            <li><span>vs best</span><b id="recapDelta">&mdash;</b></li>
             <li><span>New best?</span><b id="recapBest">No</b></li>
           </ul>
+          <div class="recap-chart" id="recapChart" aria-label="Best score, last 7 days"></div>
         </div>
         <button id="btnReplay" class="btn btn-primary" type="button">Play Again</button>
         <button id="btnShare" class="btn btn-ghost" type="button">Share Score</button>
@@ -70,6 +75,7 @@
   <div class="sr-status" role="status" aria-live="polite" id="srStatus"></div>
 </main>
 <script src="core.js"></script>
+<script src="meta.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

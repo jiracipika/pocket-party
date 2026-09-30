@@ -77,6 +77,7 @@
       creaking: false,           // warning: pop is within CREAK_LEAD_S of pumping
       held: false,
       banks: 0, pops: 0, biggestBank: 0,
+      sizeSum: 0, earlyBanks: 0,   // risk profile: banked-size fractions, <50% count
       respawnMs: 0,
       heartClaimed: false,       // a heart balloon was claimed since the last hurt
       events: [],                // ['start'|'bank'|'pop'|'heart'|'over', ...]
@@ -167,6 +168,9 @@
       }
       g.score += pts;
       g.banks++;
+      var frac = clamp(g.radius / R_MAX, 0, 1);
+      g.sizeSum += frac;
+      if (frac < 0.5) g.earlyBanks++;
       if (pts > g.biggestBank) g.biggestBank = pts;
       g.radius = R_MIN;           // fresh balloon
       rollBalloon();
@@ -187,6 +191,7 @@
       g.radius = R_MIN;
       g.held = false;
       g.banks = 0; g.pops = 0; g.biggestBank = 0;
+      g.sizeSum = 0; g.earlyBanks = 0;
       g.respawnMs = 0;
       g.heartClaimed = false;
       g.events.length = 0;
