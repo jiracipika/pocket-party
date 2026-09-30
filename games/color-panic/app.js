@@ -94,6 +94,10 @@
   var overTitle = document.getElementById('overTitle');
   var startBestLine = document.getElementById('startBestLine');
   var startBest = document.getElementById('startBest');
+  var modeChip = document.getElementById('modeChip');
+  var finalMode = document.getElementById('finalMode');
+  // both picker instances (start panel + recap card) share this wiring
+  var modeBtns = Array.prototype.slice.call(document.querySelectorAll('.mode-btn'));
 
   /* ---------- guarded localStorage ---------- */
   var BEST_KEY = 'color-panic-best';
@@ -112,8 +116,44 @@
     startBestLine.classList.remove('hidden');
   }
 
+  /* ---------- modes (unlock gating lives HERE, never in the core) ---------- */
+  var UNLOCK_SCORE = 20; // Sudden + Marathon need a best of 20
+  var MODE_ORDER = ['classic', 'sudden', 'marathon'];
+  var MODE_LABELS = { classic: 'Classic', sudden: 'Sudden Death', marathon: 'Marathon' };
+  var selectedMode = 'classic';
+
+  function modeUnlocked(m) {
+    return m === 'classic' || best >= UNLOCK_SCORE;
+  }
+  function refreshModePicker() {
+    for (var i = 0; i < modeBtns.length; i++) {
+      var b = modeBtns[i];
+      var m = b.getAttribute('data-mode');
+      var unlocked = modeUnlocked(m);
+      b.disabled = !unlocked;
+      var lock = b.querySelector('.mode-lock');
+      if (lock) lock.hidden = unlocked;
+      b.setAttribute('aria-pressed', String(m === selectedMode));
+      b.setAttribute('aria-label', MODE_LABELS[m] + ' mode' +
+        (unlocked ? '' : ' \u2014 Best ' + UNLOCK_SCORE + ' to unlock'));
+    }
+  }
+  function selectMode(m) {
+    if (MODE_ORDER.indexOf(m) < 0 || !modeUnlocked(m)) return;
+    selectedMode = m;
+    refreshModePicker();
+  }
+  /** Arrow keys walk the UNLOCKED modes in order. */
+  function cycleMode(dir) {
+    var idx = MODE_ORDER.indexOf(selectedMode);
+    for (var step = 0; step < MODE_ORDER.length; step++) {
+      idx = (idx + dir + MODE_ORDER.length) % MODE_ORDER.length;
+      if (modeUnlocked(MODE_ORDER[idx])) { selectMode(MODE_ORDER[idx]); return; }
+    }
+  }
+
   /* ---------- game ---------- */
-  var game = PG.createGame({ random: Math.random });
+  var game = PG.createGame({ mode: selectedMode, random: Math.random });
 
   /* ---------- audio (short procedural SFX, muted by toggle) ---------- */
   var muted = false;
@@ -471,12 +511,22 @@
   }
   canvas.addEventListener('pointerdown', onPointer);
 
-  /* keyboard: 1-4 answer, P pause, M mute, Enter start/replay */
+  /* keyboard: 1-4 answer, 1-3 / arrows pick mode outside play,
+     P pause, M mute, Enter start/replay */
   window.addEventListener('keydown', function (e) {
     var k = e.key;
     var st = game.getState();
     if (k >= '1' && k <= '4') {
-      if (!e.repeat) doPress(k.charCodeAt(0) - 49, 'key'); // block key-repeat
+      if (st.phase === 'playing' || st.phase === 'paused') {
+        if (!e.repeat) doPress(k.charCodeAt(0) - 49, 'key'); // block key-repeat
+      } else if (!e.repeat && k !== '4') {
+        selectMode(MODE_ORDER[k.charCodeAt(0) - 49]); // idle/over: pick mode
+      }
+      e.preventDefault();
+    } else if (k === 'ArrowLeft' || k === 'ArrowRight') {
+      if (st.phase !== 'playing' && st.phase !== 'paused') {
+        cycleMode(k === 'ArrowRight' ? 1 : -1);
+      }
       e.preventDefault();
     } else if (k === 'p' || k === 'P') {
       togglePause();
@@ -503,6 +553,13 @@
     heartsEl.setAttribute('aria-label', s.hearts + ' hearts left');
     if (prevHearts >= 0 && s.hearts < prevHearts) pulseHearts();
     prevHearts = s.hearts;
+    // mode chip: visible near the HUD only while a non-classic round runs
+    if (modeChip) {
+      var inPlay = s.phase === 'playing' || s.phase === 'paused';
+      var showChip = inPlay && !!s.mode && s.mode !== 'classic';
+      modeChip.hidden = !showChip;
+      if (showChip) modeChip.textContent = MODE_LABELS[s.mode].toUpperCase();
+    }
   }
 
   var prevHearts = -1; // spots heart losses from wrong taps AND expiries
@@ -526,6 +583,7 @@
       finalScore.textContent = String(s.score);
       finalCombo.textContent = 'x' + s.bestCombo;
       finalBest.textContent = String(best);
+      if (finalMode) finalMode.textContent = MODE_LABELS[s.mode] || 'Classic';
       var isNewBest = s.score > 0 && s.score >= best && s.score > Number(overlay.dataset.prevBest || 0);
       newBest.hidden = !isNewBest;
       newBest.classList.toggle('is-new-best', isNewBest);
@@ -538,6 +596,7 @@
     ended = true;
     var isRecord = s.score > best;
     if (isRecord) saveBest(s.score);
+    refreshModePicker(); // a new best may have unlocked the alt modes
     overlay.dataset.prevBest = String(best - (isRecord ? s.score : 0));
     showOverlay(true, s);
     startBtn.hidden = true;
@@ -564,6 +623,10 @@
     shareBtn.hidden = true;
     shareStatus.textContent = '';
     pauseBtn.setAttribute('aria-pressed', 'false');
+    // Fresh instance per round so the core's mode is per-game (the ?qa=1
+    // hook reads the module-level `game` var, so re-binding it here keeps
+    // the QA hook on the new instance).
+    game = PG.createGame({ mode: selectedMode, random: Math.random });
     game.start();
     sfx.start();
     syncHud(game.getState());
@@ -594,6 +657,13 @@
   resumeBtn.addEventListener('click', togglePause);
   pauseBtn.addEventListener('click', togglePause);
   muteBtn.addEventListener('click', toggleMute);
+  for (var mb = 0; mb < modeBtns.length; mb++) {
+    (function (btn) {
+      btn.addEventListener('click', function () {
+        selectMode(btn.getAttribute('data-mode'));
+      });
+    })(modeBtns[mb]);
+  }
 
   /* pause on tab hide */
   document.addEventListener('visibilitychange', function () {
@@ -670,6 +740,8 @@
       },
       start: function () { startGame(); },
       togglePause: function () { togglePause(); },
+      selectMode: function (m) { selectMode(m); },
+      getMode: function () { return selectedMode; },
       shareText: shareText,
       canvasSlotAt: function (clientX, clientY) { return slotFromClient(clientX, clientY); },
       buttons: {
@@ -681,6 +753,7 @@
 
   /* ---------- boot ---------- */
   resize();
+  refreshModePicker();
   syncHud(game.getState());
   startBtn.hidden = false;
   requestAnimationFrame(frame);

@@ -35,7 +35,10 @@
   var COMBO_CAP = 10;         // max bonus points from combo (2 per step)
   var COMBO_STEP = 2;         // bonus added per combo level
   var PRESS_LOCKOUT = 0.18;   // seconds; prevents accidental double input
-  var ROUND_TIME = 30;        // seconds; whole-round countdown
+  var ROUND_TIME = 30;        // seconds; whole-round countdown (classic)
+  var MARATHON_TIME = 60;     // seconds; whole-round countdown in Marathon
+  var MARATHON_STEP = 0.05;   // seconds; Marathon floor relaxation per 10 correct
+  var MARATHON_FLOOR = 0.5;   // seconds; absolute lowest Marathon answer timer
   var TIMER_MAX = 2.5;        // generous initial per-target timer
   var TIMER_MIN = 0.9;        // shrinks toward this as score rises
   var TIMER_MIN_SCORE = 180;  // score at which the minimum is reached
@@ -79,9 +82,17 @@
     return { slot: slot, word: word, confusable: confusable };
   }
 
-  function timerFor(score) {
-    var t = clamp(score / TIMER_MIN_SCORE, 0, 1); // 0..1
-    return TIMER_MAX - t * (TIMER_MAX - TIMER_MIN);
+  /**
+   * Per-answer timer for a score. The linear ramp keeps its slope past
+   * TIMER_MIN_SCORE but bottoms out at `floor` (TIMER_MIN unless a mode
+   * relaxes it — Marathon lowers its floor as correct answers stack up).
+   * With the default floor this matches the old clamped ramp exactly.
+   */
+  function timerFor(score, floor) {
+    var t = score / TIMER_MIN_SCORE;
+    if (!(t > 0)) t = 0; // NaN / negative guard
+    var lo = typeof floor === 'number' ? floor : TIMER_MIN;
+    return Math.max(TIMER_MAX - t * (TIMER_MAX - TIMER_MIN), lo);
   }
 
   function comboBonus(combo) {
@@ -92,6 +103,9 @@
    * createGame(opts)
    *   opts.random  function () -> [0,1). Required-ish; defaults to a
    *                deterministic LCG so the core stays deterministic.
+   *   opts.mode    'sudden' (one heart, first miss ends) or 'marathon'
+   *                (60s round, relaxing answer-timer floor); anything
+   *                else plays classic. Unlock gating is app-side.
    *   opts.hearts / opts.timerMax / opts.timerMin / opts.lockout overrides.
    */
   function createGame(opts) {
@@ -106,24 +120,42 @@
           };
         }();
 
-    var hearts = typeof opts.hearts === 'number' ? opts.hearts : START_HEARTS;
+    // Mode is core-pure: no gating, no persistence, no ambient input.
+    var mode = opts.mode === 'sudden' || opts.mode === 'marathon'
+      ? opts.mode
+      : 'classic';
+    // Sudden Death is one-heart play: the first miss of any kind ends it.
+    var hearts = mode === 'sudden'
+      ? 1
+      : (typeof opts.hearts === 'number' ? opts.hearts : START_HEARTS);
     var lockout = typeof opts.lockout === 'number' ? opts.lockout : PRESS_LOCKOUT;
+    var roundTime = mode === 'marathon' ? MARATHON_TIME : ROUND_TIME;
 
     var phase = 'idle';    // idle | playing | paused | over
     var score = 0, combo = 0, bestCombo = 0, heartsLeft = hearts;
-    var roundTimeLeft = ROUND_TIME; // whole-round countdown
+    var correctCount = 0;  // correct answers this round; drives Marathon's floor
+    var roundTimeLeft = roundTime; // whole-round countdown
     var targetSlot = -1, targetWord = -1;
     var targetConfusable = false;
     var timeLeft = 0, timeTotal = 0;
     var lockTimer = 0;     // >0 while input is ignored
     var lastOutcome = null; // { hit, slot, points, reason }
 
+    /** Answer-timer lower bound: Marathon relaxes it MARATHON_STEP per 10
+     *  correct answers, clamped at MARATHON_FLOOR. Other modes keep
+     *  TIMER_MIN; wrong answers never move it. */
+    function modeFloor() {
+      if (mode !== 'marathon') return TIMER_MIN;
+      return clamp(TIMER_MIN - MARATHON_STEP * Math.floor(correctCount / 10),
+        MARATHON_FLOOR, TIMER_MIN);
+    }
+
     function freshTarget() {
       var t = nextTarget(targetSlot, random);
       targetSlot = t.slot;
       targetWord = t.word;
       targetConfusable = t.confusable;
-      timeTotal = timerFor(score) + (t.confusable ? CONFUSION_BONUS : 0);
+      timeTotal = timerFor(score, modeFloor()) + (t.confusable ? CONFUSION_BONUS : 0);
       timeLeft = timeTotal;
     }
 
@@ -136,7 +168,8 @@
       start: function () {
         phase = 'playing';
         score = 0; combo = 0; bestCombo = 0; heartsLeft = hearts;
-        roundTimeLeft = ROUND_TIME;
+        correctCount = 0;
+        roundTimeLeft = roundTime;
         targetSlot = -1; targetWord = -1;
         targetConfusable = false;
         timeLeft = 0; timeTotal = 0; lockTimer = 0;
@@ -197,6 +230,7 @@
         if (slot === targetSlot) {
           combo += 1;
           if (combo > bestCombo) bestCombo = combo;
+          correctCount += 1;
           var pts = BASE_POINTS + comboBonus(combo - 1);
           score += pts;
           lastOutcome = { hit: true, slot: slot, points: pts, reason: 'match' };
@@ -230,12 +264,14 @@
       getState: function () {
         return {
           phase: phase,
+          mode: mode,
           score: score,
           best: 0, // filled by the app layer (localStorage); core stays pure
           hearts: heartsLeft,
           maxHearts: hearts,
           combo: combo,
           bestCombo: bestCombo,
+          correctCount: correctCount,
           roundTimeLeft: roundTimeLeft,
           targetIndex: targetSlot,
           targetWord: targetWord,
@@ -268,6 +304,9 @@
     TIMER_MIN_SCORE: TIMER_MIN_SCORE,
     CONFUSION_BONUS: CONFUSION_BONUS,
     HUE_FAMILY: HUE_FAMILY,
-    ROUND_TIME: ROUND_TIME
+    ROUND_TIME: ROUND_TIME,
+    MARATHON_TIME: MARATHON_TIME,
+    MARATHON_STEP: MARATHON_STEP,
+    MARATHON_FLOOR: MARATHON_FLOOR
   };
 });

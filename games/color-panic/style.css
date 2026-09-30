@@ -225,6 +225,74 @@ canvas {
 }
 .share-status { margin: 0; min-height: 18px; font-size: 12px; color: var(--muted); }
 
+/* ---- mode picker (start panel + recap card share the wiring) ---- */
+.mode-picker {
+  display: flex;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 14px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.mode-picker-recap { margin-top: 12px; }
+.mode-btn {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 6px 16px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+.mode-btn + .mode-btn { border-left: 1px solid rgba(255, 255, 255, 0.12); }
+.mode-btn[aria-pressed="true"] {
+  background: linear-gradient(180deg, #d9c5ff, #bd9cff);
+  color: #221238;
+}
+.mode-btn:disabled {
+  cursor: not-allowed;
+  color: #55556e;
+  background: rgba(255, 255, 255, 0.02);
+}
+.mode-btn:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: -3px;
+}
+.mode-lock {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  color: rgba(255, 93, 125, 0.8);
+}
+
+/* ---- mode chip during play (HUD area) ---- */
+.mode-chip {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 2;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(189, 156, 255, 0.45);
+  background: rgba(13, 11, 20, 0.72);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  pointer-events: none;
+}
+.mode-chip[hidden] { display: none; }
+
 /* ---- focus (buttons + links) ---- */
 .btn:focus-visible,
 .icon-btn:focus-visible {

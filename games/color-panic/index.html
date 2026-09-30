@@ -36,11 +36,17 @@
       <p>Color Panic: match the token&rsquo;s COLOR and SYMBOL &mdash; ignore the word. Tap the matching button or press keys 1&ndash;4.</p>
     </canvas>
     <div class="combo-pop" id="comboPop" aria-hidden="true"></div>
+    <div class="mode-chip" id="modeChip" hidden aria-hidden="true"></div>
   </div>
 
   <p class="instructions" id="instructions">Match the token&rsquo;s <strong>color + symbol</strong> &mdash; never the word inside it.</p>
 
   <div class="controls">
+    <div class="mode-picker" role="group" aria-label="Game mode">
+      <button type="button" class="mode-btn" data-mode="classic" aria-pressed="true" title="Classic &mdash; 30s, 3 hearts"><span class="mode-name">CLASSIC</span><span class="mode-lock" hidden>Best 20 to unlock</span></button>
+      <button type="button" class="mode-btn" data-mode="sudden" aria-pressed="false" aria-label="Sudden Death mode" title="Sudden Death &mdash; one heart, one miss ends it"><span class="mode-name">SUDDEN</span><span class="mode-lock" hidden>Best 20 to unlock</span></button>
+      <button type="button" class="mode-btn" data-mode="marathon" aria-pressed="false" aria-label="Marathon mode" title="Marathon &mdash; 60s, window floor relaxes as you go"><span class="mode-name">MARATHON</span><span class="mode-lock" hidden>Best 20 to unlock</span></button>
+    </div>
     <p class="best-line hidden" id="startBestLine">Personal best <b id="startBest">0</b></p>
     <button class="btn primary" id="startBtn">START</button>
     <button class="btn" id="shareBtn" hidden>SHARE SCORE</button>
@@ -55,8 +61,14 @@
         <div><dt>Score</dt><dd id="finalScore">0</dd></div>
         <div><dt>Best combo</dt><dd id="finalCombo">0</dd></div>
         <div><dt>Best ever</dt><dd id="finalBest">0</dd></div>
+        <div><dt>Mode</dt><dd id="finalMode">Classic</dd></div>
       </dl>
       <p class="new-best" id="newBest" hidden>New personal best!</p>
+      <div class="mode-picker mode-picker-recap" role="group" aria-label="Game mode for the next round">
+        <button type="button" class="mode-btn" data-mode="classic" aria-pressed="true" title="Classic &mdash; 30s, 3 hearts"><span class="mode-name">CLASSIC</span><span class="mode-lock" hidden>Best 20 to unlock</span></button>
+        <button type="button" class="mode-btn" data-mode="sudden" aria-pressed="false" aria-label="Sudden Death mode" title="Sudden Death &mdash; one heart, one miss ends it"><span class="mode-name">SUDDEN</span><span class="mode-lock" hidden>Best 20 to unlock</span></button>
+        <button type="button" class="mode-btn" data-mode="marathon" aria-pressed="false" aria-label="Marathon mode" title="Marathon &mdash; 60s, window floor relaxes as you go"><span class="mode-name">MARATHON</span><span class="mode-lock" hidden>Best 20 to unlock</span></button>
+      </div>
       <div class="overlay-actions">
         <button class="btn primary" id="replayBtn">REPLAY</button>
         <button class="btn" id="shareBtn2">SHARE</button>
