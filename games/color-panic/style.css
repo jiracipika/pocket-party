@@ -388,6 +388,17 @@ canvas {
 .hint { font-size: 11px; color: var(--muted); margin: 14px 0 0; }
 
 /* ---- reduced motion ---- */
+.special-chip {
+  min-width: 0;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+}
+.special-chip.special-freeze { background: rgba(131, 202, 255, 0.18); color: #83caff; border: 1px solid rgba(131, 202, 255, 0.5); }
+.special-chip.special-double { background: rgba(255, 210, 63, 0.16); color: #ffd23f; border: 1px solid rgba(255, 210, 63, 0.5); }
+
 @media (prefers-reduced-motion: reduce) {
   .combo-pop.show { animation: none; opacity: 0.9; }
   .hearts.hurt { animation: none; }

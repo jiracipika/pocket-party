@@ -60,5 +60,6 @@ test('round expiry wins the race against per-target expiry in the same tick', ()
 });
 
 function makeGame(overrides) {
-  return createGame(Object.assign({ random: function () { return 0; } }, overrides || {}));
+  // 0.99 never rolls an S4 special (roll needs < 0.12) and keeps slots deterministic
+  return createGame(Object.assign({ random: function () { return 0.99; } }, overrides || {}));
 }

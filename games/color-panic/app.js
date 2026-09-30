@@ -95,6 +95,7 @@
   var startBestLine = document.getElementById('startBestLine');
   var startBest = document.getElementById('startBest');
   var modeChip = document.getElementById('modeChip');
+  var specialChip = document.getElementById('specialChip');
   var finalMode = document.getElementById('finalMode');
   // both picker instances (start panel + recap card) share this wiring
   var modeBtns = Array.prototype.slice.call(document.querySelectorAll('.mode-btn'));
@@ -180,6 +181,8 @@
       beep(440 + Math.min(combo, 8) * 60 + tier, 0.12, 'triangle', 0.09);
     },
     bad: function () { beep(150, 0.22, 'sawtooth', 0.07); },
+    freeze: function () { beep(760, 0.16, 'sine', 0.09); beep(980, 0.2, 'sine', 0.08, 0.09); },
+    double: function () { beep(520, 0.1, 'square', 0.07); beep(780, 0.12, 'square', 0.07, 0.07); },
     expire: function () { beep(110, 0.3, 'square', 0.06); },
     over: function () { beep(220, 0.4, 'sine', 0.08); },
     start: function () { beep(660, 0.1, 'triangle', 0.07); }
@@ -340,6 +343,25 @@
     ctx.textBaseline = 'alphabetic';
     ctx.fillText(word.name, 0, r * 0.6);
     ctx.restore();
+
+    // S4: special badge on the token so the active special is always visible
+    if (s.roundFrozen || s.doubleShots > 0) {
+      ctx.save();
+      ctx.translate(cx + r * 0.86, cy - r * 0.86);
+      ctx.fillStyle = s.roundFrozen ? '#83caff' : '#ffd23f';
+      ctx.beginPath();
+      ctx.arc(0, 0, 13, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#0a0a0f';
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+      ctx.fillStyle = '#15121b';
+      ctx.font = '800 13px "Avenir Next", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(s.roundFrozen ? '\u2744' : 'x2', 0, 1);
+      ctx.restore();
+    }
   }
 
   function drawButton(rect, color, idx, hot) {
@@ -455,6 +477,13 @@
       var bx = rect.x + rect.w / 2, by = rect.y + rect.h / 2;
       burst(COLORS[slot].hex, bx, by, 14);
       ringBurst(COLORS[slot].hex, bx, by, st.combo);
+      // S4: a just-granted special announces itself distinctly
+      if (st.special && st.roundFrozen !== undefined && (st.special.kind === 'freeze' ? st.roundFrozen : st.doubleShots === 5)) {
+        if (st.special.kind === 'freeze') { sfx.freeze(); announce('Round paused 3 seconds!'); }
+        else { sfx.double(); announce('Double points: next 5 answers!'); }
+      } else if (st.lastOutcome && st.lastOutcome.multiplied) {
+        burst('#ffd23f', bx, by - 20, 8);
+      }
       if (st.combo >= 3) {
         comboEl.textContent = (st.combo >= 8 ? 'ON FIRE' : st.combo >= 5 ? 'HOT' : 'NICE')
           + ' x' + st.combo + '  +' + r.points;
@@ -559,6 +588,18 @@
       var showChip = inPlay && !!s.mode && s.mode !== 'classic';
       modeChip.hidden = !showChip;
       if (showChip) modeChip.textContent = MODE_LABELS[s.mode].toUpperCase();
+    }
+    // S4 special chip row: icon + text, never color-only
+    if (specialChip) {
+      var showSpecial = s.phase === 'playing' && (s.roundFrozen || s.doubleShots > 0);
+      specialChip.hidden = !showSpecial;
+      if (showSpecial) {
+        specialChip.textContent = s.roundFrozen
+          ? '\u2744 ROUND PAUSED ' + Math.ceil(s.freezeLeft) + 's'
+          : 'x2 \u00b7 ' + s.doubleShots + ' left';
+        specialChip.classList.toggle('special-freeze', s.roundFrozen);
+        specialChip.classList.toggle('special-double', !s.roundFrozen);
+      }
     }
   }
 
@@ -741,6 +782,7 @@
       start: function () { startGame(); },
       togglePause: function () { togglePause(); },
       selectMode: function (m) { selectMode(m); },
+      forceSpecial: function (kind) { game.grantSpecial(kind); },
       getMode: function () { return selectedMode; },
       shareText: shareText,
       canvasSlotAt: function (clientX, clientY) { return slotFromClient(clientX, clientY); },

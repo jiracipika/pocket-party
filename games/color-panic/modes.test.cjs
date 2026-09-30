@@ -229,3 +229,108 @@ test('marathon constants are exported from the UMD surface', () => {
   assert.strictEqual(core.MARATHON_STEP, 0.05);
   assert.strictEqual(core.MARATHON_FLOOR, 0.5);
 });
+
+// ---------- S4: specials (freeze + double points) ----------
+
+// rng that never rolls a special (0.99 >= SPECIAL_CHANCE) except when the
+// test queues exactly [roll, kind] draws — the roll is always the FIRST draw
+// a correct press consumes, so a queued pair deterministically grants.
+function neverRng() {
+  const f = function () { return f.queue.length ? f.queue.shift() : 0.99; };
+  f.queue = [];
+  return f;
+}
+const base = 0.05, kindLow = 0.10, kindHigh = 0.80; // roll pass; <0.5 freeze, >=0.5 double
+
+test('freeze: round clock pauses exactly FREEZE_TIME while the target timer ticks', () => {
+  const rng = neverRng();
+  const g = createGame({ random: rng });
+  g.start();
+  rng.queue = [base, kindLow]; // next correct press rolls and picks freeze
+  g.pressSlot(g.getState().targetIndex);
+  let s = g.getState();
+  assert.equal(s.roundFrozen, true);
+  assert.equal(s.special.kind, 'freeze');
+  const roundBefore = s.roundTimeLeft;
+  const targetBefore = s.targetTimeLeft;
+  g.update(1);
+  s = g.getState();
+  assert.ok(Math.abs(roundBefore - s.roundTimeLeft) < 1e-9, 'round clock did not tick while frozen');
+  assert.ok(s.targetTimeLeft < targetBefore, 'target timer kept ticking');
+  assert.ok(Math.abs(s.freezeLeft - (g.CONST.FREEZE_TIME - 1)) < 1e-9, 'freeze burned 1s');
+  g.update(2.5); // past the 3s freeze: round clock resumes
+  s = g.getState();
+  assert.equal(s.roundFrozen, false);
+  assert.ok(s.roundTimeLeft < roundBefore, 'round clock ticks again after the freeze');
+});
+
+test('double: exactly DOUBLE_SHOTS hits pay 2x, the next one reverts', () => {
+  const rng = neverRng();
+  const g = createGame({ random: rng });
+  g.start();
+  rng.queue = [base, kindHigh]; // grant double on the first press
+  const r1 = g.pressSlot(g.getState().targetIndex);
+  assert.equal(r1.hit, true);
+  assert.equal(g.getState().doubleShots, g.CONST.DOUBLE_SHOTS);
+  assert.equal(g.getState().lastOutcome.multiplied, false, 'the granting hit itself is not doubled');
+  const payouts = [];
+  for (let i = 0; i < g.CONST.DOUBLE_SHOTS + 1; i++) {
+    g.update(0.19); // burn the press lockout so every press lands
+    payouts.push(g.pressSlot(g.getState().targetIndex).points);
+  }
+  for (let i = 0; i < g.CONST.DOUBLE_SHOTS; i++) {
+    assert.ok(payouts[i] >= 2 * 10, 'doubled hits pay at least 20');
+  }
+  assert.equal(g.getState().doubleShots, 0, 'double shots exhausted');
+  g.update(0.19); // burn the lockout from the last doubled press
+  const s = g.getState();
+  const r = g.pressSlot(s.targetIndex);
+  assert.ok(r.hit && r.points < payouts[4],
+    'the hit after exhaustion is no longer doubled (' + r.points + ' vs last doubled ' + payouts[4] + ')');
+});
+
+test('final-2s guard: a roll inside the guard never spawns a special', () => {
+  const rng = neverRng();
+  const g = createGame({ random: rng });
+  g.start();
+  // play honestly to the guard: correct presses (0.99 never rolls) with
+  // lockout-burning updates, so the round stays alive the whole way
+  let guard = 0;
+  while (g.getState().roundTimeLeft > 2.0 && g.getState().phase === 'playing' && guard++ < 400) {
+    g.pressSlot(g.getState().targetIndex);
+    g.update(0.19);
+  }
+  const s0 = g.getState();
+  assert.equal(s0.phase, 'playing', 'round alive at the guard');
+  assert.ok(s0.roundTimeLeft <= 2.0, 'inside the guard');
+  rng.queue = [base, kindLow]; // would roll + freeze if the guard let it
+  const r = g.pressSlot(s0.targetIndex);
+  assert.equal(r.hit, true);
+  const s = g.getState();
+  assert.equal(s.special, null, 'no special despite a would-be-winning queue');
+  assert.equal(s.roundFrozen, false);
+  assert.equal(s.lastOutcome.multiplied, false, 'no doubled points inside the guard either');
+});
+
+test('no special survives start(); specials never spawn from wrong presses', () => {
+  const rng = neverRng();
+  const g = createGame({ random: rng });
+  g.start();
+  rng.queue = [base, kindLow];
+  g.pressSlot(g.getState().targetIndex);
+  assert.equal(g.getState().roundFrozen, true);
+  g.start();
+  let s = g.getState();
+  assert.equal(s.special, null, 'start clears specials');
+  assert.equal(s.roundFrozen, false);
+  // wrong press: the wrong branch never rolls
+  let wrong = false;
+  for (let i = 0; i < 4 && !wrong; i++) {
+    const t = g.getState().targetIndex;
+    const r = g.pressSlot((t + 1) % 4);
+    wrong = !r.hit;
+  }
+  assert.ok(wrong, 'fixture landed a wrong press');
+  s = g.getState();
+  assert.equal(s.special, null, 'wrong presses never grant specials');
+});

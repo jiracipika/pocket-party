@@ -36,6 +36,10 @@ var PocketCore=(function(){var module={exports:{}};
   var SLOT_COUNT = 4;
   var START_HEARTS = 3;
   var BASE_POINTS = 10;
+  var SPECIAL_CHANCE = 0.12;     // roll on each correct answer (S4)
+  var FREEZE_TIME = 3;           // seconds the round clock pauses
+  var DOUBLE_SHOTS = 5;          // doubled answers granted per double token
+  var SPECIAL_FINAL_GUARD = 2;   // no specials in the final 2s of the round
   var COMBO_CAP = 10;         // max bonus points from combo (2 per step)
   var COMBO_STEP = 2;         // bonus added per combo level
   var PRESS_LOCKOUT = 0.18;   // seconds; prevents accidental double input
@@ -143,7 +147,10 @@ var PocketCore=(function(){var module={exports:{}};
     var targetConfusable = false;
     var timeLeft = 0, timeTotal = 0;
     var lockTimer = 0;     // >0 while input is ignored
-    var lastOutcome = null; // { hit, slot, points, reason }
+    var lastOutcome = null; // { hit, slot, points, reason, multiplied? }
+    var freezeTimer = 0;    // >0: the round clock is frozen (per-target timer still ticks)
+    var doubleShots = 0;    // remaining doubled answers
+    var special = null;     // { kind: 'freeze' | 'double' } just-granted marker
 
     /** Answer-timer lower bound: Marathon relaxes it MARATHON_STEP per 10
      *  correct answers, clamped at MARATHON_FLOOR. Other modes keep
@@ -178,6 +185,7 @@ var PocketCore=(function(){var module={exports:{}};
         targetConfusable = false;
         timeLeft = 0; timeTotal = 0; lockTimer = 0;
         lastOutcome = null;
+        freezeTimer = 0; doubleShots = 0; special = null;
         freshTarget();
       },
 
@@ -189,13 +197,22 @@ var PocketCore=(function(){var module={exports:{}};
           lockTimer -= dt;
           if (lockTimer < 0) lockTimer = 0;
         }
-        // Whole-round countdown: always ticks while playing, ends the
-        // round at 0 regardless of hearts/score.
-        roundTimeLeft -= dt;
-        if (roundTimeLeft <= 0) {
-          roundTimeLeft = 0;
-          endRound();
-          return;
+        // Freeze: burn the freeze first; the whole-round countdown pauses
+        // while frozen, but the per-target timer below keeps ticking —
+        // you must keep answering while the round clock is paused.
+        if (freezeTimer > 0) {
+          freezeTimer -= dt;
+          if (freezeTimer < 0) freezeTimer = 0;
+        }
+        if (freezeTimer <= 0) {
+          // Whole-round countdown: ticks while playing, ends the round
+          // at 0 regardless of hearts/score.
+          roundTimeLeft -= dt;
+          if (roundTimeLeft <= 0) {
+            roundTimeLeft = 0;
+            endRound();
+            return;
+          }
         }
         timeLeft -= dt;
         // Consume every expiry contained in dt (handles large frames):
@@ -236,8 +253,21 @@ var PocketCore=(function(){var module={exports:{}};
           if (combo > bestCombo) bestCombo = combo;
           correctCount += 1;
           var pts = BASE_POINTS + comboBonus(combo - 1);
+          var multiplied = false;
+          if (doubleShots > 0) {
+            pts *= 2;               // doubled answers accelerate the score ramp: intended
+            multiplied = true;
+            doubleShots -= 1;
+          }
           score += pts;
-          lastOutcome = { hit: true, slot: slot, points: pts, reason: 'match' };
+          lastOutcome = { hit: true, slot: slot, points: pts, reason: 'match', multiplied: multiplied };
+          // S4 special roll: correct answers only, never while one is
+          // active, never inside the final-2s guard.
+          if (freezeTimer <= 0 && doubleShots <= 0 && roundTimeLeft > SPECIAL_FINAL_GUARD && random() < SPECIAL_CHANCE) {
+            special = { kind: random() < 0.5 ? 'freeze' : 'double' };
+            if (special.kind === 'freeze') freezeTimer = FREEZE_TIME;
+            else doubleShots = DOUBLE_SHOTS;
+          }
           freshTarget();
           return { hit: true, points: pts };
         }
@@ -282,14 +312,30 @@ var PocketCore=(function(){var module={exports:{}};
           targetConfusable: targetConfusable,
           targetTimeLeft: timeLeft,
           targetTimeTotal: timeTotal,
+          special: special,
+          roundFrozen: freezeTimer > 0,
+          freezeLeft: freezeTimer,
+          doubleShots: doubleShots,
           lastOutcome: lastOutcome
-            ? { hit: lastOutcome.hit, slot: lastOutcome.slot, points: lastOutcome.points, reason: lastOutcome.reason }
+            ? { hit: lastOutcome.hit, slot: lastOutcome.slot, points: lastOutcome.points, reason: lastOutcome.reason, multiplied: !!lastOutcome.multiplied }
             : null
         };
       },
 
       /** Score needed for the timer to hit its floor (UI hint). */
-      timerFloorScore: TIMER_MIN_SCORE
+      timerFloorScore: TIMER_MIN_SCORE,
+
+      /** Test/QA helper: force-grant a special ('freeze' | 'double'). */
+      grantSpecial: function (kind) {
+        if (phase !== 'playing') return;
+        special = { kind: kind === 'freeze' ? 'freeze' : 'double' };
+        if (special.kind === 'freeze') freezeTimer = FREEZE_TIME;
+        else doubleShots = DOUBLE_SHOTS;
+      },
+    CONST: {
+      SPECIAL_CHANCE: SPECIAL_CHANCE, FREEZE_TIME: FREEZE_TIME,
+      DOUBLE_SHOTS: DOUBLE_SHOTS, SPECIAL_FINAL_GUARD: SPECIAL_FINAL_GUARD
+    }
     };
 
     return api;
@@ -365,8 +411,8 @@ return module.exports;})();
   if(GAME_ID==='snack-catch'){
    text(script.timeText,Math.ceil(s.timeLeft/1000)+'s  '+s.hearts+' hearts  ×'+s.multiplier);
    rect(script.basket,s.basket.x-s.basket.w/2,s.basket.y-s.basket.h/2,s.basket.w,s.basket.h);
-   var pool=script.itemPool||[];
-   for(var i=0;i<pool.length;i++){var it=s.items[i];enable(pool[i],!!it);if(it){rect(pool[i],it.x-15,it.y-15,30,30);var t=component(pool[i],'Text');text(t,it.kind==='bomb'?'✹':'●');color(t,it.kind==='bomb'?'#ff5d5d':'#7dffb2');}}
+   var pool=script.itemPool||[],pwr={golden:['★','#ffe66d'],shield:['◎','#7dd7ff'],slow:['❄','#c9a6ff']};
+   for(var i=0;i<pool.length;i++){var it=s.items[i];enable(pool[i],!!it);if(it){rect(pool[i],it.x-15,it.y-15,30,30);var t=component(pool[i],'Text');var ps=pwr[it.kind];if(ps){text(t,ps[0]);color(t,ps[1]);}else{text(t,it.kind==='bomb'?'✹':'●');color(t,it.kind==='bomb'?'#ff5d5d':'#7dffb2');}}}
   }else if(GAME_ID==='stack-rush'){
    text(script.timeText,s.layers.length+' layers  •  combo '+s.streak);
    var layers=script.layerPool||[],visible=[];
