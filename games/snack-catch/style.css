@@ -145,6 +145,12 @@ body {
   100% { transform: scale(1); }
 }
 
+/* S3: power-up chip row (shield + slow-mo countdown). Hidden while inactive;
+   flat palette per game conventions, 44px+ touch targets like the other chips. */
+.chip.power { min-width: 58px; }
+.power-shield .chip-value { color: #7dd7ff; text-shadow: 0 0 10px rgba(125, 215, 255, 0.4); }
+.power-slow .chip-value { color: #c9a6ff; text-shadow: 0 0 10px rgba(201, 166, 255, 0.4); }
+
 .stage {
   position: relative;
   width: 100%;

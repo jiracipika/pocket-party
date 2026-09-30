@@ -46,8 +46,8 @@
   if(GAME_ID==='snack-catch'){
    text(script.timeText,Math.ceil(s.timeLeft/1000)+'s  '+s.hearts+' hearts  ×'+s.multiplier);
    rect(script.basket,s.basket.x-s.basket.w/2,s.basket.y-s.basket.h/2,s.basket.w,s.basket.h);
-   var pool=script.itemPool||[];
-   for(var i=0;i<pool.length;i++){var it=s.items[i];enable(pool[i],!!it);if(it){rect(pool[i],it.x-15,it.y-15,30,30);var t=component(pool[i],'Text');text(t,it.kind==='bomb'?'✹':'●');color(t,it.kind==='bomb'?'#ff5d5d':'#7dffb2');}}
+   var pool=script.itemPool||[],pwr={golden:['★','#ffe66d'],shield:['◎','#7dd7ff'],slow:['❄','#c9a6ff']};
+   for(var i=0;i<pool.length;i++){var it=s.items[i];enable(pool[i],!!it);if(it){rect(pool[i],it.x-15,it.y-15,30,30);var t=component(pool[i],'Text');var ps=pwr[it.kind];if(ps){text(t,ps[0]);color(t,ps[1]);}else{text(t,it.kind==='bomb'?'✹':'●');color(t,it.kind==='bomb'?'#ff5d5d':'#7dffb2');}}}
   }else if(GAME_ID==='stack-rush'){
    text(script.timeText,s.layers.length+' layers  •  combo '+s.streak);
    var layers=script.layerPool||[],visible=[];

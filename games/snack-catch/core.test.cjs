@@ -265,3 +265,156 @@ test('grace pacing: no bombs in the first 5 seconds of a round', () => {
   assert.ok(firstBombAt >= GRACE_MS,
     'first bomb at ' + firstBombAt + 'ms, before the ' + GRACE_MS + 'ms grace ended');
 });
+
+// ---- S3 power-up fixtures (added 2026-09-29) ----
+// Same hand-placed pattern as the bomb fixture above: rng () => 0.5 never rolls
+// a bomb or a power-up naturally (0.5 >= 0.06 chance, 0.5 >= bomb ratio is
+// false... i.e. no bomb either), so pushed fixtures are the only special items
+// and natural spawns stay plain snacks.
+
+function overBasket(g, kind, vy) { // push an item that will cross the catch line on the next update
+  const top = g.basket.y - g.basket.h / 2;
+  g.items.push({ x: g.basket.x, y: top - 20, vy: vy || 2000, kind: kind });
+}
+
+test('golden snack: 30x multiplier points, no catch/combo side effects', () => {
+  const g = PocketGame.createGame({ rng: () => 0.5 });
+  g.start();
+  overBasket(g, 'golden');
+  g.update(16);
+  assert.equal(g.score, 30, '30 * multiplier(1)');
+  assert.equal(g.catches, 0, 'golden is not a snack catch');
+  assert.equal(g.combo, 0, 'combo untouched');
+  assert.equal(g.multiplier, 1);
+  assert.ok(g.takeEvents().some(e => e[0] === 'powerup' && e[1] === 'golden'), 'powerup event emitted');
+  // the next real snack still scores 10 and feeds the combo normally
+  overBasket(g, 'apple');
+  g.update(16);
+  assert.equal(g.score, 40);
+  assert.equal(g.catches, 1);
+  assert.equal(g.combo, 1);
+});
+
+test('shield: pickup arms it, bomb absorb keeps hearts and combo, next bomb hurts', () => {
+  const g = PocketGame.createGame({ rng: () => 0.5 });
+  g.start();
+  overBasket(g, 'shield');
+  g.update(16);
+  assert.equal(g.shield, true, 'shield armed');
+  assert.ok(g.takeEvents().some(e => e[0] === 'powerup' && e[1] === 'shield'));
+  g.combo = 4; g.multiplier = 1; // state injection: prove combo survives the absorb
+  overBasket(g, 'bomb');
+  g.update(16);
+  assert.equal(g.shield, false, 'shield consumed by the bomb');
+  assert.equal(g.hearts, 3, 'no heart lost under shield');
+  assert.equal(g.bombsHit, 0, 'blocked bomb is not a hit');
+  assert.equal(g.combo, 4, 'combo survives a shielded bomb');
+  assert.equal(g.multiplier, 1);
+  assert.ok(g.takeEvents().some(e => e[0] === 'shield'), 'shield event emitted');
+  overBasket(g, 'bomb');
+  g.update(16);
+  assert.equal(g.hearts, 2, 'unshielded bomb still costs a heart');
+  assert.equal(g.combo, 0, 'unshielded bomb still resets combo');
+});
+
+test('shield persists until consumed or round end (no time decay)', () => {
+  const g = PocketGame.createGame({ rng: () => 0.5 });
+  g.start();
+  overBasket(g, 'shield');
+  g.update(16);
+  g.setInput(g.W + 999); // park far right; natural spawns just miss
+  for (let i = 0; i < 400; i++) g.update(16); // 6.4s of real round time
+  assert.equal(g.shield, true, 'shield not decayed by time');
+  g.update(g.CONST.ROUND_MS);
+  assert.equal(g.state, 'over', 'round expires normally');
+  assert.equal(g.shield, true, 'still armed at round end if unused');
+});
+
+test('slow-mo: same vy crosses the basket band later, decays, round still expires', () => {
+  const fast = PocketGame.createGame({ rng: () => 0.5 }); // no slow-mo
+  const slow = PocketGame.createGame({ rng: () => 0.5 }); // catches a slow power-up first
+  fast.start(); slow.start();
+  overBasket(slow, 'slow');
+  slow.update(16);
+  assert.equal(slow.slowLeft, slow.CONST.SLOW_MS, 'slow-mo armed for 5000ms');
+  assert.ok(slow.takeEvents().some(e => e[0] === 'powerup' && e[1] === 'slow'));
+  fast.update(16); // keep both timelines aligned
+  // identical probe over the basket, same vy: slow-mo must delay the crossing
+  const top = fast.basket.y - fast.basket.h / 2;
+  fast.items.push({ x: fast.basket.x, y: top - 16, vy: 160, kind: 'apple' });
+  slow.items.push({ x: slow.basket.x, y: top - 16, vy: 160, kind: 'apple' });
+  const f0 = fast.catches, s0 = slow.catches;
+  let fastSteps = -1, slowSteps = -1;
+  for (let i = 0; i < 20 && fastSteps < 0; i++) { fast.update(16); if (fast.catches > f0) fastSteps = i + 1; }
+  for (let j = 0; j < 20 && slowSteps < 0; j++) { slow.update(16); if (slow.catches > s0) slowSteps = j + 1; }
+  assert.ok(fastSteps > 0, 'probe caught without slow-mo');
+  assert.ok(slowSteps > fastSteps,
+    'same vy crosses later under slow-mo: ' + slowSteps + ' steps vs ' + fastSteps);
+  assert.ok(slow.slowLeft > 0 && slow.slowLeft < slow.CONST.SLOW_MS,
+    'slow-mo decays in real time, left ' + slow.slowLeft + 'ms');
+  // the round clock ignores slow-mo: it still ends at ROUND_MS
+  const g2 = PocketGame.createGame({ rng: () => 0.5 });
+  g2.start();
+  g2.slowLeft = g2.CONST.SLOW_MS; // hand-set mid-effect (same injection pattern)
+  g2.update(g2.CONST.ROUND_MS + 1);
+  assert.equal(g2.state, 'over');
+  assert.equal(g2.timeLeft, 0);
+});
+
+test('missed power-ups vanish silently: no combo break, no missed count', () => {
+  const g = PocketGame.createGame({ rng: () => 0.5 });
+  g.start();
+  g.combo = 2; // state injection
+  const missed0 = g.missed;
+  g.items.push({ x: 20, y: g.H + 13, vy: 1000, kind: 'golden' }); // far from the basket, past the floor
+  g.update(16);
+  assert.equal(g.items.length, 0, 'power-up gone off-screen');
+  assert.equal(g.combo, 2, 'combo intact');
+  assert.equal(g.multiplier, 1);
+  assert.equal(g.missed, missed0, 'not counted as a missed snack');
+  assert.equal(g.takeEvents().filter(e => e[0] === 'miss').length, 0, 'no miss event');
+});
+
+test('power-up cadence: none in grace, cooldown since last, at most one airborne', () => {
+  // Seed 1 also drives the S2 fixtures; it demonstrably spawns power-ups.
+  const g = PocketGame.createGame({ rng: seededRng(1) });
+  g.start();
+  const at = [];
+  let maxAirborne = 0;
+  for (let t = 0; t <= 30000 && g.state === 'playing'; t += 16) {
+    g.update(16);
+    let airborne = 0;
+    for (const it of g.items) {
+      if (it.kind === 'golden' || it.kind === 'shield' || it.kind === 'slow') airborne++;
+    }
+    if (airborne > maxAirborne) maxAirborne = airborne;
+    for (const e of g.takeEvents()) {
+      if (e[0] === 'spawn' && (e[1] === 'golden' || e[1] === 'shield' || e[1] === 'slow')) {
+        at.push(g._powerupAt); // exact round-elapsed ms recorded by spawn()
+      }
+    }
+  }
+  assert.ok(at.length >= 1, 'seed 1 must produce at least one power-up');
+  assert.ok(at.length <= 3, 'cooldown bounds the per-round count: ' + at.length);
+  for (const p of at) {
+    assert.ok(p >= g.CONST.GRACE_MS, 'never during the 5s grace: ' + p + 'ms');
+    assert.ok(p >= g.CONST.POWERUP_COOLDOWN, 'cooldown measured from round start: ' + p + 'ms');
+  }
+  for (let i = 1; i < at.length; i++) {
+    assert.ok(at[i] - at[i - 1] >= g.CONST.POWERUP_COOLDOWN,
+      'gap between power-ups ' + (at[i] - at[i - 1]) + 'ms < ' + g.CONST.POWERUP_COOLDOWN + 'ms cooldown');
+  }
+  assert.ok(maxAirborne <= 1, 'at most one power-up airborne, saw ' + maxAirborne);
+});
+
+test('start() clears shield and slow-mo', () => {
+  const g = PocketGame.createGame({ rng: () => 0.5 });
+  g.start();
+  overBasket(g, 'shield');
+  g.update(16);
+  g.slowLeft = 1234;
+  assert.equal(g.shield, true);
+  g.start();
+  assert.equal(g.shield, false, 'shield reset');
+  assert.equal(g.slowLeft, 0, 'slow-mo reset');
+});

@@ -27,6 +27,17 @@
     <div class="chip hearts" id="hudHearts" aria-label="Hearts">&#9829;&#9829;&#9829;</div>
   </section>
 
+  <!-- S3 power-up row: both chips hidden until armed; the row itself is
+       hidden by app.js when inactive so the default layout never shifts. -->
+  <section class="hud hud-power hidden" id="hudPower" aria-live="off">
+    <div class="chip power power-shield hidden" id="hudShield">
+      <span class="chip-label">Shield</span><span class="chip-value" aria-label="Shield active">&#9678;</span>
+    </div>
+    <div class="chip power power-slow hidden" id="hudSlow">
+      <span class="chip-label">Slow-mo</span><span id="hudSlowVal" class="chip-value">5.0s</span>
+    </div>
+  </section>
+
   <div class="stage" id="stage">
     <canvas id="game" width="360" height="640" aria-label="Snack Catch play area"></canvas>
 

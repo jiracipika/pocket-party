@@ -43,8 +43,13 @@
     donut: ['#ffb0d8', '#e26aa5'],
     cookie: ['#e8b25c', '#a9713a'],
     banana: ['#ffe15c', '#d8a927'],
-    bomb: ['#3a3a4a', '#14141c']
+    bomb: ['#3a3a4a', '#14141c'],
+    // S3 power-ups (primitives only: the atlas has no cells for these)
+    golden: ['#ffe66d', '#d8a927'],   // warm yellow, per slice spec
+    shield: ['#7dd7ff', '#2f7fd1'],
+    slow: ['#c9a6ff', '#7b4fd1']
   };
+  function isPowerUpKind(k) { return k === 'golden' || k === 'shield' || k === 'slow'; }
 
   var cv = document.getElementById('game');
   var ctx = cv.getContext('2d');
@@ -56,6 +61,10 @@
     time: document.getElementById('hudTime'),
     combo: document.getElementById('hudCombo'),
     hearts: document.getElementById('hudHearts'),
+    hudPower: document.getElementById('hudPower'),
+    hudShield: document.getElementById('hudShield'),
+    hudSlow: document.getElementById('hudSlow'),
+    hudSlowVal: document.getElementById('hudSlowVal'),
     ovStart: document.getElementById('ovStart'),
     ovPause: document.getElementById('ovPause'),
     ovOver: document.getElementById('ovOver'),
@@ -124,13 +133,17 @@
     bomb: function () { blip(120, 0.28, 'sawtooth', 0.16); blip(70, 0.34, 'sawtooth', 0.12, 0.04); },
     miss: function () { blip(210, 0.1, 'sine', 0.06); },
     over: function () { blip(392, 0.12, 'triangle', 0.1); blip(294, 0.14, 'triangle', 0.1, 0.1); blip(196, 0.22, 'triangle', 0.1, 0.2); },
-    start: function () { blip(440, 0.08, 'triangle', 0.09); blip(660, 0.1, 'triangle', 0.09, 0.06); }
+    start: function () { blip(440, 0.08, 'triangle', 0.09); blip(660, 0.1, 'triangle', 0.09, 0.06); },
+    // S3: bright pickup arpeggio; shield absorb = low thunk + rising confirm
+    power: function () { blip(660, 0.08, 'triangle', 0.11); blip(880, 0.09, 'triangle', 0.11, 0.06); blip(1175, 0.12, 'triangle', 0.1, 0.12); },
+    shield: function () { blip(180, 0.16, 'square', 0.12); blip(540, 0.14, 'triangle', 0.1, 0.05); }
   };
 
   // ---------- game state ----------
   var game = PG.createGame({ rng: PG.mulberry32((Math.random() * 0xffffffff) >>> 0) });
   game.best = loadBest();
   var particles = [];
+  var clockSec = 0;          // wall-clock seconds (app-side only; core stays Date-free)
   var raf = null, lastTs = 0, accMs = 0;
   var running = false;       // rAF loop on
   var started = false;       // has user begun the first round
@@ -173,16 +186,23 @@
   }
   function wobbleBasket() { if (reduceMotion) return; fx.wobble.t = 0; }
   function comboPopup(x, y, mult) {
+    popup(x, y, '\u00d7' + mult, ACCENT);
+  }
+  function popup(x, y, text, col) {
     if (reduceMotion) return;
     popups.push({
       x: PG.clamp(x, 46, CANVAS_W - 46),
       y: Math.min(y, CANVAS_H - 90) - 26,
-      text: '\u00d7' + mult, t: 0, dur: 0.6
+      text: text, col: col || ACCENT, t: 0, dur: 0.6
     });
   }
   function telegraph(kind, x) {
     if (reduceMotion) return;
-    telegraphs.push({ x: PG.clamp(x, 10, CANVAS_W - 10), t: 0, dur: 0.2, danger: kind === 'bomb' });
+    telegraphs.push({
+      x: PG.clamp(x, 10, CANVAS_W - 10), t: 0, dur: 0.2,
+      danger: kind === 'bomb',
+      power: isPowerUpKind(kind)   // S3: warm-yellow tick for power-up spawns
+    });
   }
   function pulseHearts() {
     if (reduceMotion) return;
@@ -228,9 +248,21 @@
 
   var ITEM_DRAW = 30; // logical draw width (~2x ITEM_R, honest footprint)
 
+  function starPath(c, x, y, rOuter, rInner) {
+    c.beginPath();
+    for (var i = 0; i < 10; i++) {
+      var ang = -Math.PI / 2 + i * Math.PI / 5;
+      var r = i % 2 === 0 ? rOuter : rInner;
+      if (i === 0) c.moveTo(x + Math.cos(ang) * r, y + Math.sin(ang) * r);
+      else c.lineTo(x + Math.cos(ang) * r, y + Math.sin(ang) * r);
+    }
+    c.closePath();
+  }
+
   function drawItem(it) {
-    // Sprite atlas first; primitives only until the atlas loads.
-    if (sprites.ready && sprites.img) {
+    // Sprite atlas first; primitives only until the atlas loads. Power-ups
+    // have no atlas cells, so they always render as primitives.
+    if (sprites.ready && sprites.img && !isPowerUpKind(it.kind)) {
       var cell = KIND_CELL[it.kind];
       if (typeof cell === 'number') {
         var c = CROPS.snack;
@@ -251,6 +283,33 @@
       ctx.beginPath(); ctx.moveTo(it.x + 6, it.y - 10); ctx.quadraticCurveTo(it.x + 14, it.y - 20, it.x + 8, it.y - 24); ctx.stroke();
       ctx.fillStyle = '#ffd23c';
       ctx.beginPath(); ctx.arc(it.x + 8, it.y - 25, 3.4, 0, Math.PI * 2); ctx.fill();
+      return;
+    }
+    // S3 power-up primitives (flat palette, gloss like the snacks)
+    if (isPowerUpKind(it.kind)) {
+      var pcol = SNACK_COLORS[it.kind];
+      if (it.kind === 'golden') {
+        ctx.fillStyle = pcol[0];                     // warm yellow #ffe66d
+        starPath(ctx, it.x, it.y, 14, 5.8); ctx.fill();
+        ctx.strokeStyle = pcol[1]; ctx.lineWidth = 2.5; ctx.stroke();
+      } else if (it.kind === 'shield') {
+        ctx.fillStyle = pcol[0];
+        ctx.beginPath(); ctx.arc(it.x, it.y, 13, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#10101c';                   // punch the ring hole
+        ctx.beginPath(); ctx.arc(it.x, it.y, 6.5, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = pcol[1]; ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.arc(it.x, it.y, 9.75, 0, Math.PI * 2); ctx.stroke();
+      } else { // slow: clock face, hands frozen
+        ctx.fillStyle = pcol[0];
+        ctx.beginPath(); ctx.arc(it.x, it.y, 13, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = pcol[1]; ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.arc(it.x, it.y, 9, 0, Math.PI * 2); ctx.stroke();
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(it.x, it.y); ctx.lineTo(it.x, it.y - 6.5); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(it.x, it.y); ctx.lineTo(it.x + 4.5, it.y + 2); ctx.stroke();
+      }
+      ctx.fillStyle = 'rgba(255,255,255,0.35)';
+      ctx.beginPath(); ctx.arc(it.x - 4, it.y - 5, 2.4, 0, Math.PI * 2); ctx.fill();
       return;
     }
     var r = 13;
@@ -308,8 +367,21 @@
     return { sx: sx, sy: sy };
   }
 
-  function drawBasket(x) {
-    var b = game.basket;
+  // S3: shield ring around the basket mouth while a shield is armed.
+  // Gentle pulse driven by the loop clock; static under reduced motion.
+  function drawShieldRing(x, top) {
+    var pulse = reduceMotion ? 0.5 : Math.sin(clockSec * 5) * 0.5 + 0.5;
+    ctx.globalAlpha = 0.45 + 0.35 * pulse;
+    ctx.strokeStyle = SNACK_COLORS.shield[0];
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    if (ctx.ellipse) ctx.ellipse(x, top, 44, 16, 0, 0, Math.PI * 2);
+    else ctx.arc(x, top, 40, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  function drawBasket(x) {    var b = game.basket;
     var w = b.w + 8, h = b.h, top = b.y - h / 2;
     var sc = basketScale();
     ctx.save();
@@ -350,7 +422,7 @@
       var pr = tg.t / tg.dur;
       var drop = 5 * pr; // slight downward drift sells the incoming fall
       ctx.globalAlpha = 0.85 * (1 - pr);
-      ctx.fillStyle = tg.danger ? DANGER : ACCENT;
+      ctx.fillStyle = tg.danger ? DANGER : (tg.power ? '#ffe66d' : ACCENT);
       ctx.beginPath();
       ctx.moveTo(tg.x - 5, 3 + drop);
       ctx.lineTo(tg.x + 5, 3 + drop);
@@ -367,7 +439,7 @@
       var pp = popups[i];
       var pr = pp.t / pp.dur;
       ctx.globalAlpha = pr < 0.7 ? 1 : 1 - (pr - 0.7) / 0.3;
-      ctx.fillStyle = ACCENT;
+      ctx.fillStyle = pp.col || ACCENT;
       // pop scale via font size: 1.35 -> 1 with a decaying ease
       ctx.font = '800 ' + Math.round(22 * (1 + 0.35 * (1 - pr) * (1 - pr))) +
         'px "Avenir Next", system-ui, sans-serif';
@@ -405,6 +477,7 @@
     drawTelegraphs();
     for (var i = 0; i < game.items.length; i++) drawItem(game.items[i]);
     drawBasket(game.basket.x);
+    if (game.shield) drawShieldRing(game.basket.x, game.basket.y - game.basket.h / 2);
 
     for (var p = 0; p < particles.length; p++) {
       var pt = particles[p];
@@ -440,6 +513,13 @@
     el.time.textContent = String(Math.ceil(game.timeLeft / 1000));
     el.combo.textContent = 'x' + game.multiplier;
     el.hearts.textContent = fmtHearts(game.hearts);
+    // S3 power-up chip row: hidden entirely when nothing is armed so the
+    // default HUD layout (and the canvas-in-viewport QA box) never changes.
+    var slowOn = game.slowLeft > 0;
+    el.hudShield.classList.toggle('hidden', game.shield !== true);
+    el.hudSlow.classList.toggle('hidden', !slowOn);
+    if (slowOn) el.hudSlowVal.textContent = (game.slowLeft / 1000).toFixed(1) + 's';
+    el.hudPower.classList.toggle('hidden', game.shield !== true && !slowOn);
   }
   function show(ov, on) { ov.classList.toggle('hidden', !on); }
   function announce(msg) { el.srStatus.textContent = msg; }
@@ -464,6 +544,18 @@
       }
       else if (e[0] === 'miss') { sfx.miss(); wobbleBasket(); }
       else if (e[0] === 'spawn') telegraph(e[1], e[2]);
+      else if (e[0] === 'powerup') { // S3: e[1] = golden | shield | slow
+        var pcol = SNACK_COLORS[e[1]] ? SNACK_COLORS[e[1]][0] : '#ffe66d';
+        sfx.power();
+        burst(e[2], e[3], pcol, 14, 110);
+        popup(e[2], e[3], e[1] === 'golden' ? '+' + (30 * game.multiplier) : (e[1] === 'shield' ? 'SHIELD' : 'SLOW-MO'), pcol);
+      }
+      else if (e[0] === 'shield') { // S3: shield ate a bomb — no heart was lost
+        sfx.shield();
+        burst(e[2], e[3], SNACK_COLORS.shield[0], 16, 130);
+        squashBasket(1.2);
+        announce('Shield absorbed a bomb!');
+      }
       else if (e[0] === 'over') sfx.over();
       else if (e[0] === 'start') sfx.start();
     }
@@ -541,6 +633,7 @@
     }
     stepParticles(dt / 1000);
     stepFx(dt / 1000);
+    clockSec += dt / 1000;
     draw();
     syncHud();
 
@@ -671,7 +764,10 @@
           hearts: game.hearts, combo: game.combo, multiplier: game.multiplier,
           catches: game.catches, missed: game.missed, bombsHit: game.bombsHit,
           timeLeft: game.timeLeft, items: game.items.length,
-          basketX: game.basket.x
+          basketX: game.basket.x,
+          // S3 (additive): power-up state for QA assertions
+          shield: game.shield === true,
+          slowLeft: game.slowLeft
         };
       },
       // S1: juice introspection for ?qa=1 — additive only, existing fields above unchanged

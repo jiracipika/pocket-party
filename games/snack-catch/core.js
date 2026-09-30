@@ -22,6 +22,10 @@
   var BOMB_MIN_BASKET_DIST = 70; // bombs never spawn this close to the basket
   var GRACE_MS = 5000;           // no bombs during the first 5s of a round
   var SPAWN_MIN = 0.45, SPAWN_MAX = 0.85; // seconds between spawns
+  var POWERUP_CHANCE = 0.06;     // snack -> power-up upgrade roll (when eligible)
+  var POWERUP_COOLDOWN = 8000;   // ms of round time between power-up spawns
+  var SLOW_MS = 5000;            // slow-mo effect duration
+  var SLOW_FACTOR = 0.5;         // item fall-motion multiplier while slow is active
 
   function mulberry32(seed) {
     var a = seed >>> 0;
@@ -36,6 +40,9 @@
   function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
   var KINDS = ['apple', 'donut', 'cookie', 'banana'];
+  var POWERUP_KINDS = ['golden', 'shield', 'slow']; // picked by one rng() call
+
+  function isPowerUp(k) { return k === 'golden' || k === 'shield' || k === 'slow'; }
 
   function createGame(opts) {
     opts = opts || {};
@@ -47,11 +54,14 @@
       hearts: HEARTS,
       combo: 0, multiplier: 1,
       catches: 0, missed: 0, bombsHit: 0,
+      shield: false,             // absorbs one bomb (set by the shield power-up)
+      slowLeft: 0,               // ms of slow-mo remaining (set by the slow power-up)
       timeLeft: ROUND_MS,
       basket: { x: W / 2, y: H - 56, w: 64, h: 30 },
       items: [],
-      events: [],                // ['catch'|'miss'|'bomb'|'combo'|'spawn'|'over'|'expire', kind, x, y]
+      events: [],                // ['catch'|'miss'|'bomb'|'combo'|'spawn'|'powerup'|'shield'|'over'|'expire', kind, x, y]
       _spawnTimer: 0,
+      _powerupAt: 0,             // round-elapsed ms when the last power-up spawned
       _rng: rng
     };
 
@@ -61,13 +71,22 @@
       g.state = 'playing';
       g.score = 0; g.hearts = HEARTS; g.combo = 0; g.multiplier = 1;
       g.catches = 0; g.missed = 0; g.bombsHit = 0;
+      g.shield = false; g.slowLeft = 0;
       g.timeLeft = ROUND_MS;
       g.items.length = 0;
       g.events.length = 0;
       g.basket.x = W / 2;
       g._spawnTimer = 0.35;
+      g._powerupAt = 0;
       g.events.push(['start']);
       return g;
+    }
+
+    function airbornePowerUp() {
+      for (var i = 0; i < g.items.length; i++) {
+        if (isPowerUp(g.items[i].kind)) return true;
+      }
+      return false;
     }
 
     function spawn(dt) {
@@ -93,12 +112,29 @@
             : clamp(g.basket.x - BOMB_MIN_BASKET_DIST, ITEM_R, W - ITEM_R);
         }
       }
+      // S3: after the normal snack/bomb roll, upgrade a SNACK to a power-up.
+      // Gates: never during the grace window, one cooldown since the last
+      // power-up, never two airborne at once, and bombs never upgrade.
+      var kind;
+      if (isBomb) {
+        kind = 'bomb';
+      } else if (
+        elapsedPrivate() >= GRACE_MS &&
+        elapsedPrivate() - g._powerupAt >= POWERUP_COOLDOWN &&
+        !airbornePowerUp() &&
+        rng() < POWERUP_CHANCE
+      ) {
+        g._powerupAt = elapsedPrivate();
+        kind = POWERUP_KINDS[Math.floor(rng() * POWERUP_KINDS.length) % POWERUP_KINDS.length];
+      } else {
+        kind = KINDS[Math.floor(rng() * KINDS.length) % KINDS.length];
+      }
       g.items.push({
         x: x, y: -ITEM_R,
         vy: speed,
-        kind: isBomb ? 'bomb' : KINDS[Math.floor(rng() * KINDS.length) % KINDS.length]
+        kind: kind
       });
-      g.events.push(['spawn', g.items[g.items.length - 1].kind, x, -ITEM_R]);
+      g.events.push(['spawn', kind, x, -ITEM_R]);
     }
 
     // Swept collision: item moves old->new y; check crossing of basket band.
@@ -122,24 +158,44 @@
         return g;
       }
       spawn(dt);
+      // S3: slow-mo decays in real time while playing; the round clock itself
+      // is untouched, so the round still ends at ROUND_MS either way.
+      if (g.slowLeft > 0) g.slowLeft = Math.max(0, g.slowLeft - dtMs);
       var top = g.basket.y - g.basket.h / 2;
       for (var i = g.items.length - 1; i >= 0; i--) {
         var it = g.items[i];
         var oldY = it.y;
-        it.y += it.vy * dt;
+        it.y += it.vy * dt * (g.slowLeft > 0 ? SLOW_FACTOR : 1);
         if (catchCheck(it, oldY)) {
           g.items.splice(i, 1);
           if (it.kind === 'bomb') {
-            g.bombsHit++;
-            g.hearts--;
-            g.combo = 0; g.multiplier = 1;
-            g.events.push(['bomb', it.kind, it.x, it.y]);
-            if (g.hearts <= 0) {
-              g.hearts = 0;
-              g.state = 'over';
-              g.events.push(['over']);
-              return g;
+            if (g.shield) {
+              // S3: the shield eats the bomb — no heart, no combo reset. The
+              // bomb is consumed either way (removed above).
+              g.shield = false;
+              g.events.push(['shield', 'shield', it.x, it.y]);
+            } else {
+              g.bombsHit++;
+              g.hearts--;
+              g.combo = 0; g.multiplier = 1;
+              g.events.push(['bomb', it.kind, it.x, it.y]);
+              if (g.hearts <= 0) {
+                g.hearts = 0;
+                g.state = 'over';
+                g.events.push(['over']);
+                return g;
+              }
             }
+          } else if (it.kind === 'golden') {
+            // power-ups are not snacks: no combo, no catches stat, just the effect
+            g.score += 30 * g.multiplier;
+            g.events.push(['powerup', 'golden', it.x, it.y]);
+          } else if (it.kind === 'shield') {
+            g.shield = true;
+            g.events.push(['powerup', 'shield', it.x, it.y]);
+          } else if (it.kind === 'slow') {
+            g.slowLeft = SLOW_MS;
+            g.events.push(['powerup', 'slow', it.x, it.y]);
           } else {
             g.catches++;
             g.combo++;
@@ -154,7 +210,8 @@
         }
         if (it.y - ITEM_R > H) {
           g.items.splice(i, 1);
-          if (it.kind !== 'bomb') {
+          // missed power-ups (like bombs) just vanish: no combo break, no stat
+          if (it.kind !== 'bomb' && !isPowerUp(it.kind)) {
             g.missed++;
             g.combo = 0; g.multiplier = 1;
             g.events.push(['miss', it.kind, it.x, H]);
@@ -188,7 +245,7 @@
     g.togglePause = togglePause;
     g.takeEvents = takeEvents;
     g.elapsedPrivate = elapsedPrivate;
-    g.CONST = { ROUND_MS: ROUND_MS, HEARTS: HEARTS, MAX_MULT: MAX_MULT, COMBO_STEP: COMBO_STEP, FALL_MAX: FALL_MAX, BOMB_MIN_BASKET_DIST: BOMB_MIN_BASKET_DIST, GRACE_MS: GRACE_MS };
+    g.CONST = { ROUND_MS: ROUND_MS, HEARTS: HEARTS, MAX_MULT: MAX_MULT, COMBO_STEP: COMBO_STEP, FALL_MAX: FALL_MAX, BOMB_MIN_BASKET_DIST: BOMB_MIN_BASKET_DIST, GRACE_MS: GRACE_MS, POWERUP_CHANCE: POWERUP_CHANCE, POWERUP_COOLDOWN: POWERUP_COOLDOWN, SLOW_MS: SLOW_MS, SLOW_FACTOR: SLOW_FACTOR };
     return g;
   }
 
