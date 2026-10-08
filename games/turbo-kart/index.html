@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Turbo Kart — Pocket Party</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main class="shell">
+  <header class="top">
+    <a class="home" href="../../index.html" aria-label="Back to Pocket Party home">&#8592; Home</a>
+    <div class="top-actions">
+      <button id="btnMute" class="icon-btn" type="button" aria-label="Toggle sound" aria-pressed="false">&#9835;</button>
+      <button id="btnPause" class="icon-btn" type="button" aria-label="Pause game" aria-pressed="false" disabled>&#10073;&#10073;</button>
+    </div>
+  </header>
+
+  <h1 class="title">TURBO KART</h1>
+  <p class="tagline">Chase checkpoints, dodge bananas, ride the boost.</p>
+
+  <section class="hud" aria-live="off">
+    <div class="chip"><span class="chip-label">Score</span><span id="hudScore" class="chip-value">0</span></div>
+    <div class="chip"><span class="chip-label">Best</span><span id="hudBest" class="chip-value">0</span></div>
+    <div class="chip" id="timeChip"><span class="chip-label">Time</span><span id="hudTime" class="chip-value">26</span></div>
+    <div class="chip"><span class="chip-label">Lap</span><span id="hudLap" class="chip-value">1</span></div>
+    <div class="chip boost" id="hudBoost" hidden>&#9889;</div>
+  </section>
+
+  <div class="stage" id="stage">
+    <canvas id="game" width="360" height="640" aria-label="Turbo Kart play area"></canvas>
+
+    <div class="overlay" id="ovStart">
+      <div class="card">
+        <div class="card-art" aria-hidden="true"><span class="art-kart">&#127950;</span></div>
+        <h2>Turbo Kart</h2>
+        <p class="card-text">Auto-throttle is on. Hold left / right to steer. Checkpoints add time, bananas spin you out, &#9889; boxes raise your top speed.</p>
+        <button id="btnStart" class="btn btn-primary" type="button">Start Race</button>
+        <button id="btnDaily" class="btn btn-ghost" type="button">Daily Time Trial</button>
+        <p class="hint">Hold screen edges or &larr; &rarr; &middot; P pause</p>
+        <p class="hint" id="startBestLine" hidden>Best: <span id="startBest">0</span></p>
+      </div>
+    </div>
+
+    <div class="overlay hidden" id="ovPause">
+      <div class="card">
+        <h2>Paused</h2>
+        <button id="btnResume" class="btn btn-primary" type="button">Resume</button>
+        <button id="btnQuit" class="btn btn-ghost" type="button">End Race</button>
+      </div>
+    </div>
+
+    <div class="overlay hidden" id="ovOver">
+      <div class="card">
+        <h2>Race Over</h2>
+        <div class="recap">
+          <div class="recap-score"><span class="chip-label">Score</span><span id="finalScore" class="big">0</span></div>
+          <ul class="recap-list">
+            <li><span>Distance</span><b id="recapDistance">0 m</b></li>
+            <li><span>Top speed</span><b id="recapSpeed">0 km/h</b></li>
+            <li><span>Checkpoints</span><b id="recapCheckpoints">0</b></li>
+            <li><span>Laps</span><b id="recapLaps">0</b></li>
+            <li><span>Bananas</span><b id="recapBananas">0</b></li>
+            <li><span>Boosts</span><b id="recapBoosts">0</b></li>
+            <li><span>New best?</span><b id="recapBest">No</b></li>
+          </ul>
+        </div>
+        <button id="btnReplay" class="btn btn-primary" type="button">Race Again</button>
+        <button id="btnShare" class="btn btn-ghost" type="button">Share Score</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="sr-status" role="status" aria-live="polite" id="srStatus"></div>
+</main>
+<script src="core.js"></script>
+<script src="meta.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

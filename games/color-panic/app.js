@@ -85,6 +85,7 @@
   var shareBtn = document.getElementById('shareBtn');
   var shareBtn2 = document.getElementById('shareBtn2');
   var shareStatus = document.getElementById('shareStatus');
+  var srStatus = document.getElementById('srStatus');
   var replayBtn = document.getElementById('replayBtn');
   var overlay = document.getElementById('overlay');
   var finalScore = document.getElementById('finalScore');
@@ -93,6 +94,8 @@
   var newBest = document.getElementById('newBest');
   var overTitle = document.getElementById('overTitle');
   var startBestLine = document.getElementById('startBestLine');
+
+  function announce(msg) { if (srStatus) srStatus.textContent = msg; }
   var startBest = document.getElementById('startBest');
   var modeChip = document.getElementById('modeChip');
   var specialChip = document.getElementById('specialChip');

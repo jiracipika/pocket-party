@@ -11,11 +11,11 @@ const base=process.env.BASE_URL||'http://127.0.0.1:4173';
  const phase=s=>s.state||s.phase;
  const timer=s=>s.roundTimeLeft??s.timeLeft??s.time;
  async function pageFor(slug,width=390,height=844){const p=await browser.newPage({viewport:{width,height},hasTouch:true,isMobile:true,deviceScaleFactor:2});p.setDefaultTimeout(5000);p.on('pageerror',e=>report.errors.push(slug+': '+e.message));p.on('response',r=>{if(r.status()>=400)report.errors.push(slug+': HTTP '+r.status()+' '+r.url())});await p.goto(base+'/games/'+slug+'/?qa=1');await p.waitForFunction(()=>!!window.__gameTest);return p;}
- const games=[['snack-catch','#btnStart','#btnPause','#btnResume','#btnReplay','#btnMute'],['donut-dash','#btnStart','#btnPause','#btnResume','#btnReplay','#btnMute'],['balloon-bank','#btnStart','#btnPause','#btnResume','#btnReplay','#btnMute'],['stack-rush','#btn-start','#btn-pause','#btn-resume','#btn-replay','#btn-sound'],['color-panic','#startBtn','#pauseBtn','#resumeBtn','#replayBtn','#muteBtn']];
+ const games=[['snack-catch','#btnStart','#btnPause','#btnResume','#btnReplay','#btnMute'],['donut-dash','#btnStart','#btnPause','#btnResume','#btnReplay','#btnMute'],['balloon-bank','#btnStart','#btnPause','#btnResume','#btnReplay','#btnMute'],['turbo-kart','#btnStart','#btnPause','#btnResume','#btnReplay','#btnMute'],['stack-rush','#btn-start','#btn-pause','#btn-resume','#btn-replay','#btn-sound'],['color-panic','#startBtn','#pauseBtn','#resumeBtn','#replayBtn','#muteBtn']];
  try{
  for(const size of [{width:360,height:640},{width:390,height:844},{width:768,height:1024},{width:1280,height:720}]){
   const p=await browser.newPage({viewport:size});await p.goto(base);
-  await check('landing responsive '+size.width,async()=>{assert.equal(await p.locator('.game').count(),5);assert.ok(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));for(const game of await p.locator('.game').all()){const b=await game.boundingBox();assert.ok(b.width>44&&b.x>=0&&b.x+b.width<=size.width+1)}});
+  await check('landing responsive '+size.width,async()=>{assert.equal(await p.locator('.game').count(),6);assert.ok(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));for(const game of await p.locator('.game').all()){const b=await game.boundingBox();assert.ok(b.width>44&&b.x>=0&&b.x+b.width<=size.width+1)}});
   await p.screenshot({path:'artifacts/landing-'+size.width+'.png',fullPage:true});await p.close();
  }
  await check('share fallback is honest',async()=>{const p=await browser.newPage();await p.addInitScript(()=>{Object.defineProperty(navigator,'share',{value:undefined});Object.defineProperty(navigator,'clipboard',{value:undefined})});await p.goto(base);await p.locator('#share-party').click();assert.match(await p.locator('#share-status').innerText(),/Copy this link:/);await p.close()});
@@ -24,7 +24,7 @@ const base=process.env.BASE_URL||'http://127.0.0.1:4173';
   await check(slug+' starts only on action',async()=>{assert.ok(['ready','idle'].includes(phase(await state(p))));await p.locator(start).tap();assert.equal(phase(await state(p)),'playing')});
   await p.clock.runFor(400);
   await check(slug+' touch pause freezes and resume advances',async()=>{await p.locator(pause).tap();assert.equal(phase(await state(p)),'paused');const before=timer(await state(p));await p.clock.runFor(700);assert.equal(timer(await state(p)),before);await p.locator(resume).tap();assert.equal(phase(await state(p)),'playing');await p.clock.runFor(400);assert.notEqual(timer(await state(p)),before)});
-  await check(slug+' mute does not change score or drop',async()=>{const runningSim=slug==='donut-dash';if(runningSim)await p.locator(pause).tap();const before=(await state(p)).score;await p.locator(mute).tap();assert.equal((await state(p)).score,before);if(runningSim)await p.locator(resume).tap();});
+  await check(slug+' mute does not change score or drop',async()=>{const runningSim=slug==='donut-dash'||slug==='turbo-kart';if(runningSim)await p.locator(pause).tap();const before=(await state(p)).score;await p.locator(mute).tap();assert.equal((await state(p)).score,before);if(runningSim)await p.locator(resume).tap();});
   await check(slug+' visibility pause',async()=>{await p.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'))});assert.equal(phase(await state(p)),'paused');await p.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:false});document.dispatchEvent(new Event('visibilitychange'))});assert.equal(phase(await state(p)),'paused');await p.locator(resume).tap()});
   if(slug==='snack-catch'){
    await check('Snack Catch touch and keyboard move basket',async()=>{const c=await p.locator('canvas').boundingBox();await p.touchscreen.tap(c.x+c.width*.8,c.y+c.height*.8);assert.ok((await state(p)).basketX>240);const x=(await state(p)).basketX;await p.keyboard.down('ArrowLeft');await p.clock.runFor(300);await p.keyboard.up('ArrowLeft');assert.ok((await state(p)).basketX<x)});
@@ -46,6 +46,26 @@ const base=process.env.BASE_URL||'http://127.0.0.1:4173';
     assert.equal(popped.hearts,popped.h0-1,'a pop costs one heart');
     await p.evaluate(()=>window.__gameTest.forceOver());
     assert.equal(phase(await state(p)),'over');
+    assert.ok(await p.locator(replay).isVisible());await p.screenshot({path:'artifacts/'+slug+'-over.png'});
+    await p.locator(replay).tap();assert.equal((await state(p)).score,0);assert.equal(phase(await state(p)),'playing');
+   });
+  }else if(slug==='turbo-kart'){
+   await check('Turbo Kart tap steer, boost box, banana spin, clock over and replay',async()=>{
+    await p.evaluate(()=>document.activeElement.blur());
+    const c=await p.locator('canvas').boundingBox();
+    const x0=(await state(p)).playerX;
+    await p.touchscreen.tap(c.x+c.width*.25,c.y+c.height*.75);
+    await p.clock.runFor(600);
+    assert.ok((await state(p)).playerX<x0,'a left tap steers left');
+    await p.keyboard.down('ArrowRight');await p.clock.runFor(500);await p.keyboard.up('ArrowRight');
+    assert.ok((await state(p)).speed>2500,'auto-throttle builds speed');
+    const pk=await p.evaluate(()=>{const g=window.__gameTest.game;g.timeLeft=12000;const seg=g.segments.find(s=>s.objs.some(o=>o.type==='boost'));g.position=((seg.index*200-40)%g.trackLength+g.trackLength)%g.trackLength;g.playerX=seg.objs[0].x;g.update(60);return {boost:g.boostTimer>0,taken:g.taken[seg.index+':0']===true}});
+    assert.ok(pk.boost&&pk.taken,'boost box grants the boost timer');
+    const sp=await p.evaluate(()=>{const g=window.__gameTest.game;g.spinTimer=0;const seg=g.segments.find(s=>s.objs.some(o=>o.type==='banana'));g.position=((seg.index*200-40)%g.trackLength+g.trackLength)%g.trackLength;g.playerX=seg.objs[0].x;g.speed=6000;g.update(60);return {spin:g.spinTimer>0,hits:g.bananasHit}});
+    assert.ok(sp.spin&&sp.hits===1,'banana spins the kart');
+    for(let i=0;i<80&&phase(await state(p))==='playing';i++)await p.clock.runFor(500);
+    assert.equal(phase(await state(p)),'over','clock expiry ends the run');
+    assert.ok((await state(p)).score>0,'distance scored');
     assert.ok(await p.locator(replay).isVisible());await p.screenshot({path:'artifacts/'+slug+'-over.png'});
     await p.locator(replay).tap();assert.equal((await state(p)).score,0);assert.equal(phase(await state(p)),'playing');
    });

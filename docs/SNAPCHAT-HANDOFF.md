@@ -6,6 +6,11 @@ Playable browser versions and native Lens Studio JavaScript adapters with explic
 
 ## Native project status (2026-09-28)
 
+Turbo Kart (2026-10-08): the 6th browser game (`games/turbo-kart/`, kart
+racer, S1-S3 done per `docs/slices/turbo-kart.md`) has **no native Lens
+Studio project yet** — its S6 native slice is future work. Balloon Bank also
+still has no native project. Both are browser-validated only.
+
 All four shipped games now have native Lens Studio projects under
 `lens-projects/`: `color-panic-lens`, `snack-catch-lens`, `stack-rush-lens`,
 and `donut-dash-lens` (assembled 2026-09-28: GameCamera/GameCanvas/PlayArea at
