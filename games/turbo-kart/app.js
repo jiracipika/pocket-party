@@ -39,7 +39,12 @@
     btnReplay: document.getElementById('btnReplay'),
     btnShare: document.getElementById('btnShare'),
     btnMute: document.getElementById('btnMute'),
+    hudGhost: document.getElementById('hudGhost'),
+    ghostLine: document.getElementById('ghostLine'),
+    ghostScoreEl: document.getElementById('ghostScore'),
     finalScore: document.getElementById('finalScore'),
+    recapGhostRow: document.getElementById('recapGhostRow'),
+    recapGhost: document.getElementById('recapGhost'),
     recapDistance: document.getElementById('recapDistance'),
     recapSpeed: document.getElementById('recapSpeed'),
     recapCheckpoints: document.getElementById('recapCheckpoints'),
@@ -125,14 +130,30 @@
   };
 
   // ---------- game state ----------
-  function makeGame(seed) {
-    var g = PG.createGame({ rng: PG.mulberry32(seed >>> 0) });
+  function makeGame(seed, ghostData) {
+    var opts = { rng: PG.mulberry32(seed >>> 0) };
+    if (ghostData) opts.ghost = ghostData;
+    var g = PG.createGame(opts);
     g.best = loadBest();
     return g;
   }
-  var game = makeGame((Math.random() * 0xffffffff) >>> 0);
+  // Ghost challenge from a shared Snap link: ?g=<code> (or #g=...). Any bad
+  // payload decodes to null and the game just boots ghostless.
+  function ghostFromUrl() {
+    var m = window.location.search.match(/[?&]g=([A-Za-z0-9\-_]+)/);
+    if (!m && window.location.hash) m = window.location.hash.match(/g=([A-Za-z0-9\-_]+)/);
+    return m ? PG.decodeGhost(m[1]) : null;
+  }
+  var ghostBoot = ghostFromUrl();
+  var currentSeed = ghostBoot ? ghostBoot.seed : (Math.random() * 0xffffffff) >>> 0;
+  var game = makeGame(currentSeed, ghostBoot);
   el.startBest.textContent = String(game.best);
   if (game.best > 0) el.startBestLine.classList.remove('hidden');
+  if (ghostBoot) {
+    el.ghostLine.classList.remove('hidden');
+    el.ghostScoreEl.textContent = String(ghostBoot.score);
+    el.btnStart.textContent = 'Race the Ghost';
+  }
 
   var reduceMotion = false;
   try { reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
@@ -244,6 +265,21 @@
     } else {
       el.boost.hidden = true;
     }
+    // rival ghost gap chip
+    if (game.ghost && game.state === 'playing') {
+      var ga = game.ghostAt(game.elapsed);
+      if (ga) {
+        var diffM = Math.round((game.odo - ga.odo) / 100);
+        el.hudGhost.hidden = false;
+        el.hudGhost.textContent = '\uD83C\uDFC1 ' + (diffM >= 0 ? '+' : '\u2212') + Math.abs(diffM) + 'm';
+        el.hudGhost.classList.toggle('ahead', diffM >= 0);
+        el.hudGhost.classList.toggle('behind', diffM < 0);
+      } else {
+        el.hudGhost.hidden = true;
+      }
+    } else {
+      el.hudGhost.hidden = true;
+    }
   }
 
   function popup(text, color, big) {
@@ -255,7 +291,7 @@
   // ---------- projection ----------
   var sprX = new Array(DRAW_DISTANCE), sprY = new Array(DRAW_DISTANCE),
       sprW = new Array(DRAW_DISTANCE), sprS = new Array(DRAW_DISTANCE),
-      sprClip = new Array(DRAW_DISTANCE);
+      sprClip = new Array(DRAW_DISTANCE), sprCX = new Array(DRAW_DISTANCE);
 
   function drawBackdrop() {
     var bg = ctx.createLinearGradient(0, 0, 0, CANVAS_H * 0.55);
@@ -455,8 +491,68 @@
     ctx.restore();
   }
 
-  function roundRect(x, y, w, h, r, fill, stroke) {
+  // translucent rival kart, drawn from the shared ghost trace (road-relative
+  // x, world z from cumulative odo). Projected directly against the road
+  // pass's cached curve centers; at the camera plane it renders side-by-side
+  // with the player, Mario-Kart style.
+  function drawGhostKart() {
+    if (!game.ghost || game.state !== 'playing') return;
+    var ga = game.ghostAt(game.elapsed);
+    if (!ga) return;
+    var SEGLEN = game.CONST.SEGMENT_LENGTH;
+    var len = game.segments.length;
+    var position = game.position;
+    var base = Math.floor(position / SEGLEN);
+    var baseSeg = game.segments[base];
+    var basePct = (position % SEGLEN) / SEGLEN;
+    var playerY = baseSeg.y1 + (baseSeg.y2 - baseSeg.y1) * basePct;
+    var camX = game.playerX * ROAD_WIDTH;
+    var camY = playerY + CAMERA_HEIGHT;
+
+    var gseg = Math.floor((ga.odo % game.trackLength) / SEGLEN);
+    var frac = (ga.odo % SEGLEN) / SEGLEN;
+    var z = gseg * SEGLEN + frac * SEGLEN;
+    if (gseg < base) z += game.trackLength;
+    var zRel = z - position;
+    var n = (gseg - base + len) % len;
+
+    var sx, sy, size;
+    if (zRel > -400 && zRel < 160) {
+      // at/behind the bumper: render side-by-side at the player's scale
+      sx = CANVAS_W / 2 + (ga.x - game.playerX) * CANVAS_W * 0.42;
+      sy = KART_Y + 10;
+      size = 26;
+    } else {
+      if (n <= 0 || n >= DRAW_DISTANCE - 1) return;
+      var seg = game.segments[gseg];
+      var cx = sprCX[n] + (sprCX[n + 1] - sprCX[n]) * frac;
+      var wy = seg.y1 + (seg.y2 - seg.y1) * frac;
+      var p = project(cx, wy, z, camX, camY, position);
+      if (!(p.scale > 0) || p.y >= sprClip[n]) return; // behind camera or a crest
+      size = Math.max(6, p.w * 0.11);
+      sx = p.x + ga.x * p.w;
+      // just ahead of the bumper the road surface projects below the frame:
+      // keep the kart emerging from the bottom edge instead of vanishing
+      sy = Math.min(p.y, CANVAS_H - size * 0.5);
+    }
+    ctx.save();
+    ctx.globalAlpha = 0.45;
+    ctx.translate(sx, sy);
+    ctx.fillStyle = '#cfd6e6';
+    roundRect(-size * 0.8, -size * 0.55, size * 1.6, size * 0.9, size * 0.3, true, false);
+    ctx.fillStyle = '#9aa5bd';
+    ctx.fillRect(-size * 1.05, 0, size * 0.42, size * 0.6);
+    ctx.fillRect(size * 0.63, 0, size * 0.42, size * 0.6);
+    ctx.fillStyle = '#e8edf8';
     ctx.beginPath();
+    ctx.arc(0, -size * 0.75, size * 0.42, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#7d8aa8';
+    ctx.fillRect(-size * 0.4, -size * 1.05, size * 0.8, size * 0.16);
+    ctx.restore();
+  }
+
+  function roundRect(x, y, w, h, r, fill, stroke) {    ctx.beginPath();
     ctx.moveTo(x + r, y);
     ctx.arcTo(x + w, y, x + w, y + h, r);
     ctx.arcTo(x + w, y + h, x, y + h, r);
@@ -519,7 +615,7 @@
       var p1 = project(x, seg.y1, z1, camX, camY, camZ);
       var p2 = project(x + dx, seg.y2, z2, camX, camY, camZ);
       sprX[n] = p1.x; sprY[n] = p1.y; sprW[n] = p1.w; sprS[n] = p1.scale;
-      sprClip[n] = maxY;
+      sprClip[n] = maxY; sprCX[n] = x;
       x += dx; dx += seg.curve;
       if (z1 - camZ <= 1 || p2.y >= maxY || p1.y <= p2.y) continue;
       drawSegment(p1, p2, idx);
@@ -543,6 +639,7 @@
     }
 
     drawSpeedLines();
+    drawGhostKart();
     drawKart();
 
     for (var q = 0; q < popups.length; q++) {
@@ -633,6 +730,22 @@
     el.recapLaps.textContent = String(game.lap);
     el.recapBananas.textContent = String(game.bananasHit);
     el.recapBoosts.textContent = String(game.boostsTaken);
+    if (game.ghost) {
+      el.recapGhostRow.hidden = false;
+      var diff = game.score - game.ghost.score;
+      if (diff > 0) {
+        el.recapGhost.textContent = 'Won by ' + diff + '!';
+        el.recapGhost.classList.add('is-new-best');
+      } else if (diff < 0) {
+        el.recapGhost.textContent = 'Lost by ' + (-diff);
+        el.recapGhost.classList.remove('is-new-best');
+      } else {
+        el.recapGhost.textContent = 'Tie!';
+        el.recapGhost.classList.add('is-new-best');
+      }
+    } else {
+      el.recapGhostRow.hidden = true;
+    }
     el.recapBest.textContent = newBest && game.score > 0 ? 'Yes!' : 'No';
     el.recapBest.classList.toggle('is-new-best', newBest && game.score > 0);
     show(el.ovOver, true);
@@ -642,9 +755,30 @@
 
   // Daily time trial: everyone gets the same seeded track for the date.
   function startDailyRound() {
-    game = makeGame(META.seedFromDate(dateStamp()));
+    ghostBoot = null;
+    currentSeed = META.seedFromDate(dateStamp());
+    game = makeGame(currentSeed, null);
+    el.ghostLine.classList.add('hidden');
+    el.btnStart.textContent = 'Start Race';
     if (window.__gameTest) window.__gameTest.game = game;
     startRound();
+  }
+
+  // ---------- ghost sharing: your run rides in the link ----------
+  function buildShareUrl() {
+    var rec = game.getRecording();
+    var code = null;
+    if (rec.odos.length >= 2 && rec.score > 0) {
+      code = PG.encodeGhost(currentSeed >>> 0, rec.score, rec.intervalMs, rec.odos, rec.xs);
+      if (code && code.length > 1600 && rec.odos.length >= 4) {
+        // halve the trace if the code outgrew share-friendly size
+        var odos = [], xs = [], i;
+        for (i = 0; i < rec.odos.length; i += 2) { odos.push(rec.odos[i]); xs.push(rec.xs[i]); }
+        if (odos.length >= 2) code = PG.encodeGhost(currentSeed >>> 0, rec.score, rec.intervalMs * 2, odos, xs);
+      }
+    }
+    var base = window.location.href.split('?')[0].split('#')[0];
+    return base + '?g=' + (code || '');
   }
 
   function startRound() {
@@ -700,22 +834,24 @@
 
   // share with honest fallbacks
   function shareText() {
-    var text = 'I scored ' + game.score + ' in Turbo Kart';
-    if (game.topSpeed > 0) text += ' (top speed ' + Math.round(game.topSpeed * 0.036) + ' km/h)';
-    text += ' \u2014 Pocket Party. Can you beat it?';
+    var text = game.ghost
+      ? 'Race my ghost \u2014 I scored ' + game.score + ' in Turbo Kart. Can you beat me?'
+      : 'I scored ' + game.score + ' in Turbo Kart';
+    if (!game.ghost && game.topSpeed > 0) text += ' (top speed ' + Math.round(game.topSpeed * 0.036) + ' km/h)';
+    if (!game.ghost) text += ' \u2014 Pocket Party. Can you beat it?';
     return text;
   }
   el.btnShare.addEventListener('click', function () {
     var text = shareText();
-    var url = window.location.href.split('?')[0];
+    var url = buildShareUrl();
     if (navigator.share) {
       navigator.share({ title: 'Turbo Kart', text: text, url: url }).catch(function () {});
     } else if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(text + ' ' + url).then(function () {
         announce('Copied to clipboard.');
-      }, function () { fallbackPrompt(text); });
+      }, function () { fallbackPrompt(text + ' ' + url); });
     } else {
-      fallbackPrompt(text);
+      fallbackPrompt(text + ' ' + url);
     }
   });
   function fallbackPrompt(text) {
@@ -736,6 +872,8 @@
           boostTimer: Math.round(game.boostTimer * 100) / 100,
           spinTimer: Math.round(game.spinTimer * 100) / 100,
           offroad: game.offroad, distance: Math.round(game.distance),
+          elapsed: Math.round(game.elapsed),
+          ghost: game.ghost ? { score: game.ghost.score, samples: game.ghost.odos.length } : null,
           input: { left: game.input.left, right: game.input.right }
         };
       },
@@ -744,6 +882,7 @@
       pause: doPause,
       resume: doResume,
       game: game,
+      buildShareUrl: buildShareUrl,
       forceOver: function () { game.endRun(); endRound(); }
     };
   }

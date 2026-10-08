@@ -13,7 +13,8 @@ S7's gates.
 | S1 | Core Rules | `games/turbo-kart/` deterministic core: throttle/steer/curves/grass/banana/boost/checkpoint/lap/expiry | L | ✅ 2026-10-08 |
 | S2 | Browser Playable | Pseudo-3D renderer, tap/hold/keyboard steering, sfx, HUD, pause/replay/share, daily seed, QA hook | L | ✅ 2026-10-08 |
 | S3 | Landing & Suite Integration | 6th card (5→6), browser-suite block, build registration, all green | M | ✅ 2026-10-08 |
-| S4 | Variety | Rival karts to overtake (points), drift mechanic (release-while-turning), item boxes v2 (shield) | M | — |
+| S4 | Variety | ~~Rival karts to overtake~~ **delivered as Ghost Racing** (2026-10-08, user request: "race their friends ghost when they send snap"): core run recording + pure base64url codec + `ghostAt` playback, share URL carries seed+line+score, translucent rival kart (bumper side-by-side / emergence clamp / distance projection), 🏁 gap chip, recap won/lost, fixture-pinned observational | M | ✅ 2026-10-08 |
+| S4b | Variety II | Rival AI karts, drift mechanic (release-while-turning mini-boost), item boxes v2 (shield) | M | — |
 | S5 | Meta & Retention | 7-day best chart on recap, streaks, risk-profile stats ("early braker %"), share text upgrade | M | — |
 | S6 | Native Parity | Controller generation + `lens-projects/turbo-kart-lens/` via MCP, hold-to-steer vs tap-pulse mapping, preview clean | L | — |
 | S7 | Device Validation | Steering vs Snapchat swipe gestures is the headline gate; safe areas; 60fps with full draw distance | L | — |
@@ -58,9 +59,35 @@ S7's gates.
   Turbo Kart block (tap steer, throttle, boost box, banana spin, clock
   expiry, replay reset) in the same shape as the other per-game blocks.
 
-## S4 — Variety (planned)
+## S4 — Ghost Racing (done, 2026-10-08)
 
-Rival karts as overtake targets (deterministic ghost lanes; +overtake
+User ask: "People should be able to race their friends ghost when they send
+snap." Delivered in the browser preview:
+
+- **Core** (`core.js`): play-time recording every 250ms (pauses excluded,
+  capped at 360 samples = 90s), `getRecording()`, pure base64url codec
+  (`encodeGhost`/`decodeGhost` — 12-bit odo deltas + 8-bit lane, header
+  carries version/seed/score/interval/count; decoder never throws),
+  `ghostAt(elapsed)` linear playback with one interval of end-of-run
+  tolerance. Ghost passed via `createGame({rng, ghost})` is **observational
+  only** — fixture asserts identical physics with and without one.
+- **App**: `?g=` (or `#g=`) boot → seeded ghost challenge (start card line +
+  "Race the Ghost" button), translucent silver kart (side-by-side inside the
+  bumper zone, bottom-edge clamp while emerging, direct projection against
+  cached curve centers at distance, crest occlusion), 🏁 gap chip
+  (green/red), recap "Ghost race: Won by X / Lost by X / Tie", Share builds
+  the ghost URL (auto-halves the trace past ~1600 chars).
+- **Suite**: 7 core fixtures (round-trip, malformed→null, interpolation,
+  observational determinism, real-run round-trip) + browser share
+  round-trip check (share URL → fresh page → chip + start card + ghost
+  survives into the run).
+- **Not claimed:** Snap deep-link/cloud-storage integration — the ghost
+  rides the share-sheet URL in this preview; a published Lens would carry it
+  via Snap's own mechanisms (future work, listed under S6/S7 notes).
+
+## S4b — Variety II (planned)
+
+Rival AI karts as overtake targets (deterministic ghost lanes; +overtake
 points), drift = release steer mid-curve for a mini-boost, item box v2 with
 a shield charge (absorbs one banana). Keep the rng contract: all rolls via
 injected rng, fixtures at tier edges, no specials changes in the final 2s.

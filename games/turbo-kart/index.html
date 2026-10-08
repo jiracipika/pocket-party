@@ -25,6 +25,7 @@
     <div class="chip" id="timeChip"><span class="chip-label">Time</span><span id="hudTime" class="chip-value">26</span></div>
     <div class="chip"><span class="chip-label">Lap</span><span id="hudLap" class="chip-value">1</span></div>
     <div class="chip boost" id="hudBoost" hidden>&#9889;</div>
+    <div class="chip ghost" id="hudGhost" hidden>&#127941;</div>
   </section>
 
   <div class="stage" id="stage">
@@ -37,6 +38,7 @@
         <p class="card-text">Auto-throttle is on. Hold left / right to steer. Checkpoints add time, bananas spin you out, &#9889; boxes raise your top speed.</p>
         <button id="btnStart" class="btn btn-primary" type="button">Start Race</button>
         <button id="btnDaily" class="btn btn-ghost" type="button">Daily Time Trial</button>
+        <p class="hint ghost-line hidden" id="ghostLine">&#127946; Ghost race from a friend &mdash; beat <b id="ghostScore">0</b> pts</p>
         <p class="hint">Hold screen edges or &larr; &rarr; &middot; P pause</p>
         <p class="hint" id="startBestLine" hidden>Best: <span id="startBest">0</span></p>
       </div>
@@ -62,6 +64,7 @@
             <li><span>Laps</span><b id="recapLaps">0</b></li>
             <li><span>Bananas</span><b id="recapBananas">0</b></li>
             <li><span>Boosts</span><b id="recapBoosts">0</b></li>
+            <li id="recapGhostRow" hidden><span>Ghost race</span><b id="recapGhost">&mdash;</b></li>
             <li><span>New best?</span><b id="recapBest">No</b></li>
           </ul>
         </div>

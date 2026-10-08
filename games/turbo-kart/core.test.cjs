@@ -317,3 +317,132 @@ test('deterministic: same seed + same inputs = identical run', () => {
   }
   assert.deepEqual(run(99), run(99), 'same seed replays exactly');
 });
+
+// ---------- ghost recording, codec and playback ----------
+
+test('recording: samples every 250ms of play-time, pauses excluded, reset on start', () => {
+  const g = newGame(); g.start();
+  g.speed = g.CONST.MAX_SPEED;
+  for (let i = 0; i < 40; i++) g.update(100); // 4s of play
+  const rec = g.getRecording();
+  assert.equal(rec.intervalMs, 250);
+  assert.equal(rec.odos.length, 17, 'samples at 0,250,...,4000 (17)');
+  assert.equal(rec.odos[0], 0, 'first sample at the line');
+  assert.ok(Math.abs(rec.odos[rec.odos.length - 1] - g.odo) < g.CONST.MAX_SPEED * 0.25 + 1,
+    'last sample within one interval of current odo');
+  g.pause();
+  for (let i = 0; i < 20; i++) g.update(100); // 2s paused: no new samples
+  assert.equal(g.getRecording().odos.length, 17, 'pause adds no samples');
+  g.resume(); g.update(250);
+  assert.equal(g.getRecording().odos.length, 18, 'one sample per interval after resume');
+  const before = g.getRecording();
+  g.start();
+  assert.deepEqual(g.getRecording().odos, [0], 'start() resets the recording');
+  assert.equal(g.elapsed, 0);
+  assert.deepEqual(before.odos.length > 0, true);
+});
+
+test('recording: caps at REC_MAX_SAMPLES', () => {
+  const g = newGame(); g.start();
+  for (let i = 0; i < 2000 && g.state === 'playing'; i++) g.update(50); // 100s
+  assert.ok(g.getRecording().odos.length <= g.CONST.REC_MAX_SAMPLES, 'capped');
+});
+
+test('codec: encode -> decode round-trips exactly', () => {
+  const odos = [0, 800, 1750, 2600, 3700, 4850];
+  const xs = [0, 0.4, 0.9, 0.2, -0.6, -1.1];
+  const code = Kart.encodeGhost(0xdeadbeef, 1520, 250, odos, xs);
+  assert.ok(/^[A-Za-z0-9_-]+$/.test(code), 'base64url alphabet only');
+  const dec = Kart.decodeGhost(code);
+  assert.ok(dec, 'decodes');
+  assert.equal(dec.seed, 0xdeadbeef >>> 0);
+  assert.equal(dec.score, 1520);
+  assert.equal(dec.intervalMs, 250);
+  assert.equal(dec.odos.length, odos.length);
+  assert.deepEqual(dec.odos, odos, 'odo deltas round-trip');
+  for (let i = 0; i < xs.length; i++) {
+    assert.ok(Math.abs(dec.xs[i] - xs[i]) < 0.03, 'playerX quantized ~0.02 (got ' + dec.xs[i].toFixed(3) + ')');
+  }
+  // a ~90s ghost stays inside shareable URL budgets
+  const long = Kart.encodeGhost(7, 9000, 250, Array.from({ length: 360 }, (_, i) => i * 2200), Array.from({ length: 360 }, () => 0));
+  assert.ok(long.length < 1300, 'max ghost code length ' + long.length);
+});
+
+test('codec: malformed input returns null, never throws', () => {
+  const good = Kart.encodeGhost(1, 1, 250, [0, 100], [0, 0]);
+  const bads = ['', '!!!', 'abcd', good.slice(0, -3) + '~',
+    Kart.encodeGhost(1, 1, 40, [0, 100], [0, 0])]; // interval below the 50ms floor
+  for (const bad of bads) {
+    assert.equal(Kart.decodeGhost(bad), null, 'null for ' + JSON.stringify(String(bad).slice(0, 12)));
+  }
+  // valid code with the version byte flipped (byte0: 0x01 -> 0x02)
+  assert.equal(Kart.decodeGhost(null), null);
+  assert.equal(Kart.decodeGhost(42), null);
+  assert.equal(Kart.decodeGhost(good.replace(/^AQ/, 'Ag')), null, 'wrong version rejected');
+  assert.ok(Kart.decodeGhost(good), 'sanity: good code decodes');
+});
+
+test('ghost playback: interpolation, end-of-run, no ghost', () => {
+  const raw = { intervalMs: 250, odos: [0, 1000, 2000], xs: [0, 1, -1], score: 700 };
+  const g = Kart.createGame({ rng: seededRng(5), ghost: raw });
+  assert.ok(g.ghost, 'ghost attached');
+  assert.equal(g.ghost.score, 700);
+  const at0 = g.ghostAt(0);
+  assert.equal(at0.odo, 0);
+  const mid = g.ghostAt(125);
+  assert.ok(Math.abs(mid.odo - 500) < 1e-9 && Math.abs(mid.x - 0.5) < 1e-9, 'linear between samples');
+  const end = g.ghostAt(500);
+  assert.equal(end.odo, 2000);
+  const coast = g.ghostAt(640); // within one interval past the end: holds final position
+  assert.equal(coast.odo, 2000);
+  assert.equal(g.ghostAt(751), null, 'ghost gone one interval after its last sample');
+  assert.equal(g.ghostAt(-1), null);
+  const none = Kart.createGame({ rng: seededRng(5) });
+  assert.equal(none.ghost, null);
+  assert.equal(none.ghostAt(0), null);
+  // malformed ghost objects are dropped, not thrown
+  for (const bad of [{}, { odos: [0], xs: [0], intervalMs: 250 }, { odos: [0, 1], xs: [0], intervalMs: 250 },
+    { odos: [0, 1], xs: [0, 0], intervalMs: 10 }]) {
+    assert.equal(Kart.createGame({ rng: seededRng(5), ghost: bad }).ghost, null, 'bad ghost dropped');
+  }
+});
+
+test('ghost is observational: identical physics with and without one', () => {
+  function run(withGhost) {
+    const opts = { rng: seededRng(77) };
+    if (withGhost) opts.ghost = { intervalMs: 250, odos: [0, 5000, 9999], xs: [0, 2, -2], score: 42 };
+    const g = Kart.createGame(opts); g.start();
+    play(g, 9000, (t) => g.setInput(t % 70 < 25, t % 110 < 40));
+    return {
+      score: g.score, odo: Math.round(g.odo), x: +g.playerX.toFixed(4),
+      bananas: g.bananasHit, boosts: g.boostsTaken, timeLeft: Math.round(g.timeLeft)
+    };
+  }
+  assert.deepEqual(run(true), run(false), 'ghost must never touch the simulation');
+});
+
+test('full ghost round-trip: record a real run, decode, race against it', () => {
+  function play(seed, ghost) {
+    const opts = { rng: seededRng(seed) };
+    if (ghost) opts.ghost = ghost;
+    const g = Kart.createGame(opts); g.start();
+    play9s: for (let t = 0; t < 9000 && g.state === 'playing'; t += STEP) {
+      g.setInput(t % 80 < 30, t % 50 < 18);
+      g.update(STEP);
+    }
+    return g;
+  }
+  const first = play(123, null);
+  const rec = first.getRecording();
+  assert.ok(rec.odos.length >= 30, '9s of samples');
+  const code = Kart.encodeGhost(123, rec.score, rec.intervalMs, rec.odos, rec.xs);
+  const dec = Kart.decodeGhost(code);
+  assert.ok(dec, 'friend-side decode');
+  const second = play(dec.seed, dec);
+  assert.equal(second.ghost.score, rec.score, 'ghost target score survives the trip');
+  // same seed -> same track -> identical line: the racer should sit on the ghost
+  const ga = second.ghostAt(second.elapsed);
+  assert.ok(ga, 'ghost still alive at the copilot time');
+  assert.ok(Math.abs(second.odo - ga.odo) < 500, 'same inputs -> same line (delta ' +
+    Math.round(second.odo - ga.odo) + ' units)');
+});

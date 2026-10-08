@@ -100,6 +100,11 @@ body {
    prefers-reduced-motion rule below disables the pulse for motion-sensitive
    players, and app.js only adds the class while actually playing. */
 .chip.boost { min-height: 48px; justify-content: center; font-size: 17px; font-weight: 800; color: #ffd23f; }
+.chip.ghost { min-height: 48px; justify-content: center; font-size: 15px; font-weight: 800; }
+.chip.ghost.ahead { color: #7dffb2; }
+.chip.ghost.behind { color: var(--danger); }
+.ghost-line { color: var(--accent); font-size: 13px; }
+.ghost-line b { color: #ffffff; }
 .chip.time-low { border-color: var(--danger); }
 .chip.time-low .chip-value { color: var(--danger); animation: time-pulse 0.9s ease-in-out infinite; }
 @keyframes time-pulse {

@@ -69,6 +69,26 @@ const base=process.env.BASE_URL||'http://127.0.0.1:4173';
     assert.ok(await p.locator(replay).isVisible());await p.screenshot({path:'artifacts/'+slug+'-over.png'});
     await p.locator(replay).tap();assert.equal((await state(p)).score,0);assert.equal(phase(await state(p)),'playing');
    });
+   await check('Turbo Kart ghost share round-trip',async()=>{
+    await p.clock.runFor(6000); // build a real recording on the replayed run
+    await p.evaluate(()=>window.__gameTest.forceOver());
+    const url=await p.evaluate(()=>window.__gameTest.buildShareUrl());
+    assert.match(url,/\?g=[A-Za-z0-9_-]{24,}/,'share url carries the ghost code');
+    const q=await browser.newPage({viewport:{width:390,height:844},hasTouch:true,isMobile:true});
+    await q.clock.install();
+    await q.goto(url.replace('?g=','?qa=1&g='));
+    await q.waitForFunction(()=>!!window.__gameTest);
+    const gs=await q.evaluate(()=>window.__gameTest.getState());
+    assert.ok(gs.ghost&&gs.ghost.score>0,'ghost challenge loaded from the url');
+    assert.ok(await q.locator('#ghostLine').isVisible(),'start card shows the ghost line');
+    await q.locator('#btnStart').tap();
+    await q.clock.runFor(1200);
+    assert.ok(await q.locator('#hudGhost').isVisible(),'ghost chip visible while racing');
+    const st=await q.evaluate(()=>window.__gameTest.getState());
+    assert.ok(st.ghost&&st.ghost.score===gs.ghost.score,'ghost survives into the run');
+    await q.screenshot({path:'artifacts/turbo-kart-ghost.png'});
+    await q.close();
+   });
   }else{
    await check('Color Panic touch hitbox, keyboard and timer game over',async()=>{let s=await state(p);const c=await p.locator('canvas').boundingBox();const slot=s.targetIndex;const pad=14,bw=(c.width-pad*3)/2,bh=(c.height*.42-pad*2)/2;const x=c.x+pad+(slot%2)*(bw+pad)+bw/2;const y=c.y+c.height-pad-bh/2-(slot>=2?bh+pad:0);await p.touchscreen.tap(x,y);assert.ok((await state(p)).score>0);await p.clock.runFor(220);s=await state(p);const before=s.score;await p.keyboard.press(String(s.targetIndex+1));assert.ok((await state(p)).score>before);await p.clock.runFor(9000);assert.equal(phase(await state(p)),'over');assert.ok(await p.locator(replay).isVisible(),'timer expiry must show recap');await p.screenshot({path:'artifacts/'+slug+'-over.png'});await p.locator(replay).tap();assert.equal((await state(p)).score,0);assert.equal(phase(await state(p)),'playing')});
   }

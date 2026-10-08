@@ -52,6 +52,12 @@
   var BANANA_GAP = 7;            // candidate lanes for bananas (segment modulo)
   var BOOST_GAP = 21;            // boost boxes live on the 21s
 
+  // ---- ghost recording (share-your-line via Snap link) ----
+  var REC_INTERVAL_MS = 250;     // sample period, play-time only (pauses excluded)
+  var REC_MAX_SAMPLES = 360;     // 90s of line; longer runs share a partial ghost
+  var GHOST_X_RANGE = 5.2;       // playerX quantization span (-2.6 .. 2.6)
+  var GHOST_FMT_VERSION = 1;
+
   function mulberry32(seed) {
     var a = seed >>> 0;
     return function () {
@@ -139,12 +145,146 @@
     return rng() < 0.5 ? -d : d;
   }
 
+  // ---------- ghost codec: pure bytes -> base64url, no host APIs ----------
+  var B64URL_AL = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+
+  function bytesToB64url(bytes) {
+    var out = '', i;
+    for (i = 0; i < bytes.length; i += 3) {
+      var b0 = bytes[i];
+      var b1 = i + 1 < bytes.length ? bytes[i + 1] : 0;
+      var b2 = i + 2 < bytes.length ? bytes[i + 2] : 0;
+      out += B64URL_AL[b0 >> 2];
+      out += B64URL_AL[((b0 & 3) << 4) | (b1 >> 4)];
+      out += i + 1 < bytes.length ? B64URL_AL[((b1 & 15) << 2) | (b2 >> 6)] : '';
+      out += i + 2 < bytes.length ? B64URL_AL[b2 & 63] : '';
+    }
+    return out;
+  }
+
+  function b64urlToBytes(str) {
+    if (typeof str !== 'string' || str.length === 0) return null;
+    var clean = str.replace(/=+$/, '');
+    var out = [], acc = 0, bits = 0, i, v;
+    for (i = 0; i < clean.length; i++) {
+      v = B64URL_AL.indexOf(clean.charAt(i));
+      if (v < 0) return null;
+      acc = ((acc << 6) | v) & 0xFFFF;
+      bits += 6;
+      if (bits >= 8) {
+        bits -= 8;
+        out.push((acc >> bits) & 255);
+      }
+    }
+    return out;
+  }
+
+  function BitWriter() { this.bytes = []; this.acc = 0; this.cnt = 0; }
+  BitWriter.prototype.write = function (value, bits) {
+    this.acc = ((this.acc << bits) | value) & 0xFFFFFFF; // cnt<=7 + 20 bits fits 28
+    this.cnt += bits;
+    while (this.cnt >= 8) {
+      this.cnt -= 8;
+      this.bytes.push((this.acc >> this.cnt) & 255);
+    }
+  };
+  BitWriter.prototype.flush = function () {
+    if (this.cnt > 0) {
+      this.bytes.push((this.acc << (8 - this.cnt)) & 255);
+      this.cnt = 0;
+    }
+  };
+
+  function BitReader(bytes) { this.bytes = bytes; this.pos = 0; this.acc = 0; this.cnt = 0; }
+  BitReader.prototype.read = function (bits) {
+    while (this.cnt < bits) {
+      if (this.pos >= this.bytes.length) return -1;
+      this.acc = ((this.acc << 8) | this.bytes[this.pos++]) & 0xFFFFF;
+      this.cnt += 8;
+    }
+    this.cnt -= bits;
+    return (this.acc >> this.cnt) & ((1 << bits) - 1);
+  };
+
+  function u32le(v) { return [v & 255, (v >> 8) & 255, (v >> 16) & 255, (v >>> 24) & 255]; }
+  function readU32le(b, o) { return (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24)) >>> 0; }
+
+  // Encode a recorded run. odos are ABSOLUTE cumulative distances (units);
+  // deltas pack to 12 bits (max speed * 250ms = 3300 < 4096), playerX to 8 bits.
+  // Layout: ver(1) seed(u32le) score(u32le) interval/10(u8) count(u16le) samples(20b each)
+  function encodeGhost(seed, score, intervalMs, odos, xs) {
+    if (!odos || !xs || odos.length !== xs.length || odos.length < 2) return null;
+    var count = odos.length;
+    if (count > 65535) return null;
+    var iv = Math.round(intervalMs / 10);
+    if (iv < 1 || iv > 255) return null;
+    var w = new BitWriter();
+    var i, d, xi;
+    for (i = 0; i < count; i++) {
+      d = Math.round(odos[i] - (i > 0 ? odos[i - 1] : 0));
+      d = clamp(d, 0, 4095);
+      xi = Math.round((clamp(xs[i], -2.6, 2.6) + 2.6) / GHOST_X_RANGE * 255);
+      w.write(d, 12);
+      w.write(clamp(xi, 0, 255), 8);
+    }
+    w.flush(); // pad the final partial byte so decode's length check matches
+    var head = [GHOST_FMT_VERSION].concat(u32le(seed >>> 0)).concat(u32le(Math.max(0, Math.floor(score)))).
+      concat([iv, count & 255, (count >> 8) & 255]);
+    return bytesToB64url(head.concat(w.bytes));
+  }
+
+  // Never throws: any malformed input returns null (the app just plays ghostless).
+  function decodeGhost(str) {
+    try {
+      var b = b64urlToBytes(str);
+      if (!b || b.length < 12) return null;
+      if (b[0] !== GHOST_FMT_VERSION) return null;
+      var seed = readU32le(b, 1);
+      var score = readU32le(b, 5);
+      var intervalMs = b[9] * 10;
+      if (intervalMs < 50) return null;
+      var count = b[10] | (b[11] << 8);
+      if (count < 2) return null;
+      var expected = 12 + Math.ceil(count * 20 / 8);
+      if (b.length !== expected) return null;
+      var r = new BitReader(b);
+      r.pos = 12;
+      var odos = [], xs = [], prev = 0, i, d, xi;
+      for (i = 0; i < count; i++) {
+        d = r.read(12);
+        xi = r.read(8);
+        if (d < 0 || xi < 0) return null;
+        prev += d;
+        odos.push(prev);
+        xs.push(xi / 255 * GHOST_X_RANGE - 2.6);
+      }
+      return { seed: seed, score: score, intervalMs: intervalMs, odos: odos, xs: xs };
+    } catch (e) {
+      return null;
+    }
+  }
+
   function createGame(opts) {
     opts = opts || {};
     var rng = opts.rng || function () { return 0.5; };
     var segments = buildTrack(rng);
     var cpEvery = segments.cpEvery;
     var trackLength = segments.length * SEGMENT_LENGTH;
+
+    // optional rival ghost: purely observational, never touches physics
+    var ghost = null;
+    if (opts.ghost && typeof opts.ghost === 'object') {
+      var go = opts.ghost;
+      if (go.odos && go.xs && go.odos.length === go.xs.length && go.odos.length >= 2 &&
+          typeof go.intervalMs === 'number' && go.intervalMs >= 50) {
+        ghost = {
+          intervalMs: go.intervalMs,
+          odos: go.odos.slice(0),
+          xs: go.xs.slice(0),
+          score: Math.max(0, Math.floor(go.score || 0))
+        };
+      }
+    }
 
     var g = {
       W: 360, H: 640,
@@ -163,12 +303,17 @@
       checkpoints: 0, bananasHit: 0, boostsTaken: 0,
       boostTimer: 0, spinTimer: 0,
       offroad: false,
+      elapsed: 0,                // play-time ms since start (pauses excluded)
       input: { left: false, right: false },
+      ghost: ghost,              // decoded rival ghost or null (observational)
       segments: segments,
       trackLength: trackLength,
       taken: {},                 // 'segIndex:objIndex' -> true, per run
       events: [],                // ['start'|'boost'|'spin'|'checkpoint'|'lap'|'over', ...]
-      _rng: rng
+      _rng: rng,
+      _recOdos: [0],             // ghost recording: absolute odo per sample
+      _recXs: [0],               //   matching playerX per sample
+      _recAccum: 0
     };
 
     function segmentAt(z) {
@@ -188,10 +333,41 @@
       g.score = Math.floor(g.distance * SCORE_PER_UNIT) + g.bonus;
     }
 
+    // Rival ghost position at a given play-time. Returns {odo, x} while the
+    // ghost's run is still going, null once it's past its last sample (the
+    // ghost finished/gone) or when there is no ghost.
+    function ghostAt(elapsedMs) {
+      if (!ghost || typeof elapsedMs !== 'number' || !isFinite(elapsedMs) || elapsedMs < 0) return null;
+      var n = ghost.odos.length;
+      var lastT = (n - 1) * ghost.intervalMs;
+      // tolerate one interval of frame-granularity overshoot past the ghost's
+      // final sample before declaring it gone
+      if (elapsedMs > lastT + ghost.intervalMs) return null;
+      var f = elapsedMs / ghost.intervalMs;
+      var i = Math.floor(f);
+      if (i >= n - 1) return { odo: ghost.odos[n - 1], x: ghost.xs[n - 1] };
+      var t = f - i;
+      return {
+        odo: ghost.odos[i] + (ghost.odos[i + 1] - ghost.odos[i]) * t,
+        x: ghost.xs[i] + (ghost.xs[i + 1] - ghost.xs[i]) * t
+      };
+    }
+
+    // Snapshot of the just-driven run for ghost encoding (copies).
+    function getRecording() {
+      return {
+        intervalMs: REC_INTERVAL_MS,
+        odos: g._recOdos.slice(0),
+        xs: g._recXs.slice(0),
+        score: g.score
+      };
+    }
+
     function update(dtMs) {
       if (g.state !== 'playing' || typeof dtMs !== 'number' || !isFinite(dtMs) || dtMs <= 0) return g;
       var dt = Math.min(dtMs, 100) / 1000;
 
+      g.elapsed += dtMs;
       g.timeLeft -= dtMs;
       if (g.timeLeft <= 0) {
         g.timeLeft = 0;
@@ -277,6 +453,14 @@
 
       if (g.boostTimer > 0) g.boostTimer = Math.max(0, g.boostTimer - dt);
       if (g.speed > g.topSpeed) g.topSpeed = g.speed;
+      // ghost line recording: play-time only (pauses never reach update)
+      g._recAccum += dtMs;
+      var guard = 0;
+      while (g._recAccum >= REC_INTERVAL_MS && g._recOdos.length < REC_MAX_SAMPLES && guard++ < 6) {
+        g._recAccum -= REC_INTERVAL_MS;
+        g._recOdos.push(g.odo);
+        g._recXs.push(g.playerX);
+      }
       recomputeScore();
       return g;
     }
@@ -298,6 +482,10 @@
       g.checkpoints = 0; g.bananasHit = 0; g.boostsTaken = 0;
       g.boostTimer = 0; g.spinTimer = 0;
       g.offroad = false;
+      g.elapsed = 0;
+      g._recOdos = [0];
+      g._recXs = [0];
+      g._recAccum = 0;
       g.input.left = false; g.input.right = false;
       g.taken = {};
       g.events.length = 0;
@@ -318,6 +506,8 @@
     function takeEvents() { var e = g.events; g.events = []; return e; }
 
     g.update = update;
+    g.ghostAt = ghostAt;
+    g.getRecording = getRecording;
     g.setInput = setInput;
     g.start = start;
     g.pause = pause;
@@ -336,7 +526,8 @@
       SPIN_TIME_S: SPIN_TIME_S, SPIN_SPEED_CAP: SPIN_SPEED_CAP,
       SCORE_PER_UNIT: SCORE_PER_UNIT, BOOST_POINTS: BOOST_POINTS,
       CHECKPOINT_POINTS: CHECKPOINT_POINTS, LAP_POINTS: LAP_POINTS,
-      OBJ_HIT: OBJ_HIT, OBJ_PICKUP: OBJ_PICKUP
+      OBJ_HIT: OBJ_HIT, OBJ_PICKUP: OBJ_PICKUP,
+      REC_INTERVAL_MS: REC_INTERVAL_MS, REC_MAX_SAMPLES: REC_MAX_SAMPLES
     };
     return g;
   }
@@ -347,6 +538,8 @@
     mulberry32: mulberry32,
     clamp: clamp,
     easeInOut: easeInOut,
-    VERSION: '1.0.0'
+    encodeGhost: encodeGhost,
+    decodeGhost: decodeGhost,
+    VERSION: '1.1.0'
   };
 });
