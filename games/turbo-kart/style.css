@@ -10,6 +10,11 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* the chip/list rules below set display, which would beat the UA's [hidden];
+   both switches must always win */
+[hidden] { display: none !important; }
+.hidden { display: none !important; }
+
 html, body { height: 100%; }
 
 body {
@@ -96,13 +101,31 @@ body {
 }
 .chip-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--dim); }
 .chip-value { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
-/* S1: boost chip lives on its own row slot; time pulses under 5s. The global
-   prefers-reduced-motion rule below disables the pulse for motion-sensitive
-   players, and app.js only adds the class while actually playing. */
-.chip.boost { min-height: 48px; justify-content: center; font-size: 17px; font-weight: 800; color: #ffd23f; }
-.chip.ghost { min-height: 48px; justify-content: center; font-size: 15px; font-weight: 800; }
-.chip.ghost.ahead { color: #7dffb2; }
-.chip.ghost.behind { color: var(--danger); }
+/* boost + ghost indicators live ON the stage (no HUD reflow mid-race) */
+.stage-subhud {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  pointer-events: none;
+  z-index: 2;
+}
+.stage-subhud .chip {
+  background: rgba(10, 10, 15, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 12px;
+  min-height: 34px;
+  min-width: 0;
+  padding: 4px 12px;
+  font-size: 14px;
+  font-weight: 800;
+}
+.stage-subhud .chip.boost { color: #ffd23f; }
+.stage-subhud .chip.ghost.ahead { color: #7dffb2; }
+.stage-subhud .chip.ghost.behind { color: var(--danger); }
 .ghost-line { color: var(--accent); font-size: 13px; }
 .ghost-line b { color: #ffffff; }
 .chip.time-low { border-color: var(--danger); }

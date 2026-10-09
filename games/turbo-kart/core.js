@@ -396,7 +396,11 @@
         } else {
           var cap = g.boostTimer > 0 ? BOOST_MAX : MAX_SPEED;
           g.speed += (g.boostTimer > 0 ? BOOST_ACCEL : ACCEL) * dt;
-          if (g.speed > cap) g.speed = Math.max(MAX_SPEED, g.speed - BOOST_DECAY * dt);
+          if (g.speed > cap) {
+            // boosted accel outpaces bleed, so hold the hard cap while the
+            // boost lasts; afterwards bleed any overshoot back to MAX_SPEED
+            g.speed = g.boostTimer > 0 ? cap : Math.max(MAX_SPEED, g.speed - BOOST_DECAY * dt);
+          }
         }
       }
 

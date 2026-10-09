@@ -425,31 +425,31 @@
     var spinning = game.spinTimer > 0;
     var t = performance.now() / 1000;
     var bounce = reduceMotion ? 0 : Math.sin(t * 26) * 1.7 * speedPct;
-    var cx = CANVAS_W / 2 + steer * 7;
+    var cx = CANVAS_W / 2 + steer * 7 + (spinning && !reduceMotion ? Math.sin(spinPhase * 23) * 4 : 0);
     var cy = KART_Y + bounce;
     ctx.save();
     ctx.translate(cx, cy);
-    var rot = spinning && !reduceMotion ? spinPhase : steer * 0.1;
-    ctx.rotate(rot);
-    // boost flames
-    if (game.boostTimer > 0 && !reduceMotion) {
-      var fl = 10 + Math.sin(t * 40) * 5 + speedPct * 8;
-      ctx.fillStyle = '#ff8c2f';
-      ctx.beginPath();
-      ctx.moveTo(-14, -2); ctx.lineTo(-14 - fl, 6); ctx.lineTo(-10, 8); ctx.closePath();
-      ctx.moveTo(14, -2); ctx.lineTo(14 + fl, 6); ctx.lineTo(10, 8); ctx.closePath();
-      ctx.fill();
-      ctx.fillStyle = '#ffd23f';
-      ctx.beginPath();
-      ctx.moveTo(-13, 0); ctx.lineTo(-13 - fl * 0.55, 5); ctx.lineTo(-10, 6); ctx.closePath();
-      ctx.moveTo(13, 0); ctx.lineTo(13 + fl * 0.55, 5); ctx.lineTo(10, 6); ctx.closePath();
-      ctx.fill();
-    }
-    // shadow
+    // shadow stays screen-stable; only the kart rocks
     ctx.fillStyle = 'rgba(0,0,0,0.4)';
     ctx.beginPath();
     ctx.ellipse(0, 26, 34, 8, 0, 0, Math.PI * 2);
     ctx.fill();
+    var rot = spinning && !reduceMotion ? Math.sin(spinPhase * 10) * 0.5 : steer * 0.1;
+    ctx.rotate(rot);
+    // exhaust flames shoot down-screen from the rear when boosted
+    if (game.boostTimer > 0 && !reduceMotion) {
+      var fl = 12 + Math.sin(t * 42) * 5;
+      ctx.fillStyle = '#ff8c2f';
+      ctx.beginPath();
+      ctx.moveTo(-24, 14); ctx.lineTo(-30 - fl * 0.5, 30); ctx.lineTo(-12, 22); ctx.closePath();
+      ctx.moveTo(24, 14); ctx.lineTo(30 + fl * 0.5, 30); ctx.lineTo(12, 22); ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#ffd23f';
+      ctx.beginPath();
+      ctx.moveTo(-20, 16); ctx.lineTo(-24 - fl * 0.3, 27); ctx.lineTo(-12, 21); ctx.closePath();
+      ctx.moveTo(20, 16); ctx.lineTo(24 + fl * 0.3, 27); ctx.lineTo(12, 21); ctx.closePath();
+      ctx.fill();
+    }
     // rear wheels
     ctx.fillStyle = '#14141a';
     ctx.fillRect(-32, 4, 12, 18);
@@ -567,18 +567,22 @@
     var speedPct = game.speed / game.CONST.MAX_SPEED;
     var boosting = game.boostTimer > 0;
     if ((speedPct < 0.9 && !boosting) || reduceMotion) return;
-    var n = boosting ? 10 : 5;
-    var t = performance.now() / 100;
-    ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+    // edge-anchored streaks angled away from the vanishing point, road area
+    // only (vertical lines higher up read as rain)
+    var n = boosting ? 7 : 4;
+    var t = performance.now() / 90;
+    ctx.strokeStyle = 'rgba(255,255,255,' + (boosting ? 0.28 : 0.15) + ')';
     ctx.lineWidth = 2;
+    var yMin = CANVAS_H * 0.56;
     for (var i = 0; i < n; i++) {
-      var seed = i * 97 + Math.floor(t) * 13;
-      var x = 30 + ((seed * 41) % (CANVAS_W - 60));
-      var y = ((seed * 67) % 240) + 120;
-      var len = boosting ? 46 : 26;
+      var seed = i * 131 + Math.floor(t) * 29;
+      var side = i % 2 === 0 ? -1 : 1;
+      var x = CANVAS_W / 2 + side * (CANVAS_W * 0.30 + (seed % 46));
+      var y = yMin + (seed * 17) % 180;
+      var len = boosting ? 56 : 32;
       ctx.beginPath();
       ctx.moveTo(x, y);
-      ctx.lineTo(x, y + len);
+      ctx.lineTo(x + side * len * 0.45, y + len);
       ctx.stroke();
     }
   }
@@ -652,12 +656,6 @@
       ctx.fillText(pu.text, CANVAS_W / 2, CANVAS_H * 0.4 - pu.slot * 36 - pu.t * 40);
     }
     ctx.globalAlpha = 1;
-    if (game.state === 'ready') {
-      ctx.fillStyle = 'rgba(255,255,255,0.78)';
-      ctx.font = '700 15px "Avenir Next", sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('Hold left / right to steer', CANVAS_W / 2, CANVAS_H * 0.2);
-    }
     ctx.restore();
   }
 

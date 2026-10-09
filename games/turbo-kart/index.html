@@ -24,12 +24,14 @@
     <div class="chip"><span class="chip-label">Best</span><span id="hudBest" class="chip-value">0</span></div>
     <div class="chip" id="timeChip"><span class="chip-label">Time</span><span id="hudTime" class="chip-value">26</span></div>
     <div class="chip"><span class="chip-label">Lap</span><span id="hudLap" class="chip-value">1</span></div>
-    <div class="chip boost" id="hudBoost" hidden>&#9889;</div>
-    <div class="chip ghost" id="hudGhost" hidden>&#127941;</div>
   </section>
 
   <div class="stage" id="stage">
     <canvas id="game" width="360" height="640" aria-label="Turbo Kart play area"></canvas>
+    <div class="stage-subhud" aria-hidden="true">
+      <div class="chip boost" id="hudBoost" hidden>&#9889;</div>
+      <div class="chip ghost" id="hudGhost" hidden>&#127941;</div>
+    </div>
 
     <div class="overlay" id="ovStart">
       <div class="card">

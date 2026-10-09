@@ -210,6 +210,8 @@ test('boost box: timer, points, raised speed cap, decay back to MAX', () => {
   g.position = 5 * SEG; g.playerX = 0; g.boostTimer = 2.0; g.speed = g.CONST.MAX_SPEED;
   play(g, 300, () => { g.position = 5 * SEG; g.playerX = 0; });
   assert.ok(g.speed > g.CONST.MAX_SPEED, 'boosted past the normal cap (' + Math.round(g.speed) + ')');
+  assert.ok(g.speed <= g.CONST.BOOST_MAX + 1e-9,
+    'boost accel is hard-capped at BOOST_MAX (' + Math.round(g.speed) + ')');
   // once the boost burns out the speed bleeds back to exactly MAX
   g.boostTimer = 0;
   play(g, 4000, () => { g.position = 5 * SEG; g.playerX = 0; });
