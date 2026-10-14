@@ -226,3 +226,6 @@ button:focus-visible,a:focus-visible { outline: 3px solid white; outline-offset:
 @media (min-width: 700px) {
   .shell { max-width: 460px; padding-top: 24px; }
 }
+
+/* Build stamp under the menu card: dim, tiny, informational only. */
+.rev-tag { opacity: 0.45; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; margin: 10px 0 0; text-align: center; }

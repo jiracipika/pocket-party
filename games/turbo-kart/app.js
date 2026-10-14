@@ -905,3 +905,14 @@
   show(el.ovStart, true);
   draw();
 })();
+
+  // Visible build stamp: a stale tab keeps the previous game code until a
+  // reload, so show which deploy this is (see the invisible-bananas fix).
+  fetch('/build-info.json', { cache: 'no-store' })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (info) {
+      if (!info || !info.commit) return;
+      var el = document.getElementById('buildRev');
+      if (el) el.textContent = 'rev ' + String(info.commit).slice(0, 7);
+    })
+    .catch(function () {});
