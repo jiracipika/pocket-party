@@ -631,7 +631,20 @@
       var sIdx = (base + m) % len;
       var s2 = segs[sIdx];
       var sy = sprY[m], sx = sprX[m], sw = sprW[m];
-      if (!(sy > 0 && sy < CANVAS_H) || sy >= sprClip[m] || sprS[m] <= 0) continue;
+      if (!(sy > 0 && sy < CANVAS_H) || sprS[m] <= 0) continue;
+      if (!s2.checkpoint && s2.objs.length === 0) continue;
+      // A sprite's base projects to exactly its segment's clip y (same world
+      // y and z as the previous segment's far edge), so the old
+      // `sy >= sprClip[m]` cull rejected every sprite on visible road —
+      // bananas, boost boxes and checkpoint arches never rendered. Clip-crop
+      // instead: bases on the crest draw their body above it, and what sits
+      // below a hill's crest line stays hidden.
+      var clipY = sprClip[m];
+      if (clipY > sy || clipY <= 0) continue;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, CANVAS_W, clipY);
+      ctx.clip();
       if (s2.checkpoint) drawCheckpointArch({ x: sx, y: sy, w: sw }, sIdx);
       for (var k = 0; k < s2.objs.length; k++) {
         if (game.taken[sIdx + ':' + k]) continue;
@@ -640,6 +653,7 @@
         if (o.type === 'banana') drawBanana(ox, sy, Math.max(2.5, sw * 0.07));
         else drawBoostBox(ox, sy, Math.max(4, sw * 0.12));
       }
+      ctx.restore();
     }
 
     drawSpeedLines();
