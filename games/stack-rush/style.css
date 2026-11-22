@@ -129,6 +129,10 @@ body {
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 .icon-btn.muted { color: var(--dim); }
+.icon-btn[aria-pressed="true"] {
+  color: var(--accent);
+  border-color: rgba(255, 230, 109, 0.5);
+}
 
 /* ---- screens (overlays) ---- */
 .screen {

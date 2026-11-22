@@ -187,6 +187,12 @@ canvas { display: block; width: 100%; height: auto; touch-action: none; }
 .btn:active { transform: scale(0.95); filter: brightness(1.15); }
 .btn-primary { background: var(--accent); color: #2b1802; }
 .btn-primary:hover { filter: brightness(1.08); }
+/* idle breathe on the start CTA — the shared "press start" pulse (cf. Stack Rush) */
+#ovStart .btn-primary { animation: cta-breathe 2.4s ease-in-out infinite; }
+@keyframes cta-breathe {
+  0%, 100% { box-shadow: 0 10px 26px rgba(255, 176, 63, 0.24); }
+  50% { box-shadow: 0 12px 36px rgba(255, 176, 63, 0.46); }
+}
 .btn-ghost { background: transparent; color: var(--text); border: 1px solid rgba(255, 255, 255, 0.2); }
 .btn-ghost:active { background: rgba(255, 255, 255, 0.08); }
 

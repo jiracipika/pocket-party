@@ -744,8 +744,8 @@
   el.btnMute.addEventListener('click', function () {
     audio.muted = !audio.muted;
     saveMuted(audio.muted);
+    // glyph stays ♪; muted state is carried by aria-pressed styling (shared meta language)
     el.btnMute.setAttribute('aria-pressed', String(audio.muted));
-    el.btnMute.textContent = audio.muted ? '\u{1F507}' : '\u266B';
   });
   document.addEventListener('visibilitychange', function () {
     if (document.hidden && game.state === 'playing') doPause();
@@ -754,7 +754,6 @@
   if (window.ResizeObserver) new ResizeObserver(resize).observe(stage);
 
   el.btnMute.setAttribute('aria-pressed', String(audio.muted));
-  el.btnMute.textContent = audio.muted ? '\u{1F507}' : '\u266B';
 
   // ---------- share ----------
   function shareText() {

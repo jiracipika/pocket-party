@@ -496,14 +496,17 @@
     if (game.getState().phase !== 'playing') return;
     game.pause();
     show(screenPause);
-    btnPause.textContent = '▶';
+    // glyph stays ‖ like the other games; paused state is carried by aria-pressed styling
+    btnPause.textContent = '\u2502\u2502';
+    btnPause.setAttribute('aria-pressed', 'true');
     AudioSys.ui();
   }
   function resumeGame() {
     if (game.getState().phase !== 'paused') return;
     game.resume();
     hide(screenPause);
-    btnPause.textContent = '⏸';
+    btnPause.textContent = '\u2502\u2502';
+    btnPause.setAttribute('aria-pressed', 'false');
     AudioSys.ui();
   }
 
@@ -545,7 +548,7 @@
   function toggleSound() {
     AudioSys.setMuted(!AudioSys.isMuted());
     btnSound.classList.toggle('muted', AudioSys.isMuted());
-    btnSound.textContent = AudioSys.isMuted() ? '✕' : '♪';
+    btnSound.setAttribute('aria-pressed', String(AudioSys.isMuted()));
     if (!AudioSys.isMuted()) AudioSys.ui();
   }
 
@@ -604,6 +607,7 @@
   bindBtn('btn-resume', function () { resumeGame(); });
   bindBtn('btn-pause', function () { (game.getState().phase === 'paused') ? resumeGame() : pauseGame(); });
   bindBtn('btn-sound', function () { toggleSound(); });
+  btnSound.setAttribute('aria-pressed', String(AudioSys.isMuted())); // keep muted state on load
   bindBtn('btn-share', function () { shareScore(); });
   bindBtn('btn-quit', function () {
     game.reset();

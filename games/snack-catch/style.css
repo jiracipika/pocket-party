@@ -226,6 +226,12 @@ canvas { display: block; width: 100%; height: auto; touch-action: none; }
   transform: scale(0.96) translateY(1px);
   box-shadow: 0 5px 14px rgba(125, 255, 178, 0.2);
 }
+/* idle breathe on the start CTA — the shared "press start" pulse (cf. Stack Rush) */
+#ovStart .btn-primary { animation: cta-breathe 2.4s ease-in-out infinite; }
+@keyframes cta-breathe {
+  0%, 100% { box-shadow: 0 10px 26px rgba(125, 255, 178, 0.28); }
+  50% { box-shadow: 0 12px 36px rgba(125, 255, 178, 0.5); }
+}
 .btn-ghost {
   background: rgba(255, 255, 255, 0.06);
   color: var(--text);

@@ -14,7 +14,10 @@ const base=process.env.BASE_URL||'http://127.0.0.1:4173';
  const games=[['snack-catch','#btnStart','#btnPause','#btnResume','#btnReplay','#btnMute'],['donut-dash','#btnStart','#btnPause','#btnResume','#btnReplay','#btnMute'],['balloon-bank','#btnStart','#btnPause','#btnResume','#btnReplay','#btnMute'],['turbo-kart','#btnStart','#btnPause','#btnResume','#btnReplay','#btnMute'],['stack-rush','#btn-start','#btn-pause','#btn-resume','#btn-replay','#btn-sound'],['color-panic','#startBtn','#pauseBtn','#resumeBtn','#replayBtn','#muteBtn']];
  try{
  for(const size of [{width:360,height:640},{width:390,height:844},{width:768,height:1024},{width:1280,height:720}]){
-  const p=await browser.newPage({viewport:size});await p.goto(base);
+  // reduced-motion emulation: the entrance module holds below-fold cards at opacity:0
+  // until IntersectionObserver fires, which never happens in a fullPage capture —
+  // and it doubles as a check that the reduce path renders the complete page.
+  const p=await browser.newPage({viewport:size,reducedMotion:'reduce'});await p.goto(base);
   await check('landing responsive '+size.width,async()=>{assert.equal(await p.locator('.game').count(),6);assert.ok(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));for(const game of await p.locator('.game').all()){const b=await game.boundingBox();assert.ok(b.width>44&&b.x>=0&&b.x+b.width<=size.width+1)}});
   await p.screenshot({path:'artifacts/landing-'+size.width+'.png',fullPage:true});await p.close();
  }

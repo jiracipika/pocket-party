@@ -691,9 +691,9 @@
 
   function toggleMute() {
     muted = !muted;
+    // glyph stays ♪; the muted state is carried by aria-pressed styling (shared meta language)
     muteBtn.setAttribute('aria-pressed', String(muted));
     muteBtn.setAttribute('aria-label', muted ? 'Unmute sound' : 'Mute sound');
-    muteBtn.textContent = muted ? '\u{1F507}' : '\u{1F50A}';
   }
 
   startBtn.addEventListener('click', startGame);
