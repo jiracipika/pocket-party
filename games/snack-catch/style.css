@@ -317,3 +317,13 @@ button:focus-visible,a:focus-visible { outline: 3px solid var(--accent); outline
 @media (min-width: 700px) {
   .shell { max-width: 460px; padding-top: 24px; }
 }
+
+/* Narrow phones (320px): five chips at the 58px minimum do not fit one row,
+   so the hearts wrapped and pushed the stage 11px below the fold. Drop the
+   minimum and share the row evenly. */
+@media (max-width: 359px) {
+  .hud { gap: 4px; }
+  .chip { flex: 1 1 0; min-width: 0; padding: 6px 4px; }
+  .chip.hearts { letter-spacing: 2px; }
+  .hud-power .chip.power { flex: 0 1 auto; }
+}

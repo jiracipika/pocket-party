@@ -112,7 +112,7 @@ html, body {
   min-height: 48px;
 }
 .hud-cell:first-child, .hud-cell:last-child { flex: 1; }
-.hud-label { font-size: 10px; letter-spacing: 0.18em; color: var(--muted); }
+.hud-label { font-size: 12px; letter-spacing: 0.12em; color: var(--muted); }
 .hud-value { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; }
 #scoreVal { color: var(--accent); }
 .hearts {
@@ -249,6 +249,7 @@ canvas {
 
 /* ---- mode picker (start panel + recap card share the wiring) ---- */
 .mode-picker {
+  max-width: 100%;
   display: flex;
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 14px;
@@ -261,6 +262,8 @@ canvas {
   min-width: 44px;
   min-height: 44px;
   padding: 6px 16px;
+  flex: 1 1 0;
+  min-width: 0;
   border: none;
   background: transparent;
   color: var(--muted);
@@ -290,11 +293,11 @@ canvas {
   outline-offset: -3px;
 }
 .mode-lock {
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.05em;
-  white-space: nowrap;
-  color: #ff8ba0; /* was 80%-alpha coral — fell under 4.5:1 at 9px */
+  text-align: center;
+  line-height: 1.2;
+  color: #ff8ba0;
 }
 
 /* ---- mode chip during play (HUD area) ---- */
@@ -434,6 +437,18 @@ canvas {
 @media (min-width: 720px) {
   .stage { max-width: 640px; gap: 14px; padding-top: 20px; }
   .hud-value { font-size: 24px; }
+}
+
+/* Narrow phones (320x568): the fixed 270px canvas floor plus the start
+   controls ran 28px past the fold, and the three mode buttons (their
+   "Best 20 to unlock" captions now 12px) overflowed the row sideways. */
+@media (max-width: 359px) {
+  .stage { gap: 6px; padding-bottom: 12px; }
+  .mode-picker { max-width: 100%; }
+  .mode-btn { padding: 6px 4px; }
+  .mode-name { letter-spacing: 0.04em; }
+  .canvas-wrap { min-height: 244px; }
+  .controls { gap: 6px; min-height: 0; }
 }
 
 .sr-status {
