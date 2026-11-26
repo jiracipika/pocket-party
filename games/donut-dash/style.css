@@ -23,6 +23,8 @@ body {
   color: var(--text);
   font-family: "Avenir Next", "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
+  /* the sheet must not rubber-band or pull-to-refresh under a drag game */
+  overscroll-behavior: none;
   touch-action: manipulation;
   overflow-x: hidden;
 }
@@ -31,7 +33,7 @@ body {
   max-width: 520px;
   min-height: 100%;
   margin: 0 auto;
-  padding: 10px 12px calc(18px + env(safe-area-inset-bottom));
+  padding: 10px 12px calc(12px + env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -114,7 +116,7 @@ body {
   min-width: 58px;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
-.chip-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--dim); }
+.chip-label { font-size: 12px; text-transform: uppercase; letter-spacing: .6px; color: var(--dim); }
 .chip-value { font-size: 18px; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
 
 /* S3 chain multiplier: pinned to the score chip's corner so the HUD row
